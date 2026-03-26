@@ -35,6 +35,8 @@ class PredictionRequest(BaseModel):
     player_name: str
     stats: list 
 
+nba_data_df = pd.read_csv('nba_player_game_logs.csv')
+
 @app.get("/player/{name}")
 def get_player_stats(name: str):
     """
@@ -42,26 +44,23 @@ def get_player_stats(name: str):
     """
     try:
         # Search for player
-        nba_players = players.find_players_by_full_name(name)
-        if not nba_players:
+        nba_players = nba_data_df[nba_data_df['PLAYER_NAME'].str.contains(name, case=False, na=False)]
+        if nba_players.empty:
             raise HTTPException(status_code=404, detail="Player not found")
+
+        nba_players = nba_players.fillna(0)
         
-        player_id = nba_players[0]["id"]
-        
-        # Get Game Log
-        gamelog = playergamelog.PlayerGameLog(player_id=player_id,
-                                              season="2025-26",
-                                              timeout = 60)
-        df = gamelog.get_data_frames()[0]
+        player_id = int(nba_players.iloc[0]["PLAYER_ID"])
         
         # Clean up data for the frontend
+        #recent_games = nba_players.head(10).to_dict(orient='records')
         recent_games = []
-        for index, row in df.head(10).iterrows():
+        for index, row in nba_players.head(10).iterrows():
             recent_games.append({
                 "gameDate": row['GAME_DATE'],
                 "matchup": row['MATCHUP'],
                 "wl": row['WL'],
-                "min": int(float(row['MIN'])),
+                "min": float(row['MIN']),
                 "pts": int(row['PTS']),
                 "ast": int(row['AST']),
                 "reb": int(row['REB']),
@@ -77,7 +76,7 @@ def get_player_stats(name: str):
             
         return {
             "id": player_id,
-            "name": nba_players[0]["full_name"],
+            "name": nba_players.iloc[0]["PLAYER_NAME"],
             "team": "NBA",
             "position": "Player",
             "recentGames": recent_games
