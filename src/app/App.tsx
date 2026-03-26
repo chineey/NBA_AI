@@ -17,7 +17,8 @@ export default function App() {
     setLoading(true);
     try {
       const encodedName = encodeURIComponent(name); 
-      const response = await fetch(`https://nba-ai.onrender.com/player/${encodedName}`);
+      //const response = await fetch(`https://nba-ai.onrender.com/player/${encodedName}`);
+      const response = await fetch(`http://127.0.0.1:8000/player/${encodedName}`);
       
       if (!response.ok) {
         throw new Error('Player not found');

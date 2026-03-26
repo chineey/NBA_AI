@@ -76,13 +76,34 @@ def get_player_stats(name: str):
                 "oreb": int(row['OREB']),
                 "dreb": int(row['DREB'])
             })
+
+        all_games = []
+        for index, row in nba_players.iterrows():
+            all_games.append({
+                "gameDate": row['GAME_DATE'],
+                "matchup": row['MATCHUP'],
+                "wl": row['WL'],
+                "min": float(row['MIN']),
+                "pts": int(row['PTS']),
+                "ast": int(row['AST']),
+                "reb": int(row['REB']),
+                "fgPct": float(row['FG_PCT']),
+                "fg3m": int(row['FG3M']),
+                "fg3a": int(row['FG3A']),
+                "fg3Pct": float(row['FG3_PCT']),
+                "stl": int(row['STL']),
+                "blk": int(row['BLK']),
+                "oreb": int(row['OREB']),
+                "dreb": int(row['DREB'])
+            })
             
         return {
             "id": player_id,
             "name": nba_players.iloc[0]["PLAYER_NAME"],
             "team": "NBA",
             "position": "Player",
-            "recentGames": recent_games
+            "recentGames": recent_games,
+            "allGames": all_games
         }
 
     except Exception as e:
