@@ -15,7 +15,7 @@ scraper_api_key = os.getenv("SCRAPER_API_KEY")
 nba_url = f"https://stats.nba.com/stats/leaguegamelog?Counter=0&DateFrom={game_date}&DateTo=&Direction=ASC&LeagueID=00&PlayerOrTeam=P&Season=2025-26&SeasonType=Regular+Season&Sorter=DATE"
 
 # 2. We use ScraperAPI's direct REST endpoint (This completely bypasses the SSL Certificate errors!)
-scraper_url = f"http://api.scraperapi.com/?api_key={scraper_api_key}&url={nba_url}"
+scraper_url = f"http://api.scraperapi.com/?api_key={scraper_api_key}&premium=true&url={nba_url}"
 
 custom_headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
