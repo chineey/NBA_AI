@@ -1,46 +1,85 @@
 import pandas as pd
-from nba_api.stats.endpoints import leaguegamelog
-import os
-from dotenv import load_dotenv
 import requests
-import urllib3
-
-# --- FIX: Disable SSL verification for the ScraperAPI proxy ---
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-original_request = requests.Session.request
-
-def patched_request(self, method, url, **kwargs):
-    kwargs['verify'] = False # This forces Python to ignore the SSL mismatch
-    return original_request(self, method, url, **kwargs)
-
-requests.Session.request = patched_request
-# --------------------------------------------------------------
+import os
+import time
+from dotenv import load_dotenv
 
 load_dotenv()
 
 load_df = pd.read_csv("nba_player_game_logs.csv")
 game_date = load_df["GAME_DATE"].max()
 
-# Replace YOUR_API_KEY with the one from ScraperAPI
-scraper_api = os.getenv("SCRAPER_API_KEY")
-proxy_url = f"http://scraperapi:{scraper_api}@proxy-server.scraperapi.com:8001"
+scraper_api_key = os.getenv("SCRAPER_API_KEY")
 
-gamelog = leaguegamelog.LeagueGameLog(
-    season="2025-26",
-    player_or_team_abbreviation="P",
-    date_from_nullable=game_date,
-    proxy=proxy_url, # <--- THIS SNEAKS PAST THE NBA FIREWALL
-    timeout=60 # <--- FIX: Added so ScraperAPI has enough time to route the request
-)
+# 1. We construct the exact URL that nba_api was trying to hit behind the scenes
+nba_url = f"https://stats.nba.com/stats/leaguegamelog?Counter=0&DateFrom={game_date}&DateTo=&Direction=ASC&LeagueID=00&PlayerOrTeam=P&Season=2025-26&SeasonType=Regular+Season&Sorter=DATE"
 
-df = gamelog.get_data_frames()[0]
-df1 = df[['PLAYER_ID', 'GAME_ID', 'GAME_DATE', 'PLAYER_NAME','TEAM_ABBREVIATION','MATCHUP', 'WL','MIN','PTS', 'AST', 'REB', 'STL', 'BLK', 'OREB', 'DREB', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM','FTA']]
+# 2. We use ScraperAPI's direct REST endpoint (This completely bypasses the SSL Certificate errors!)
+scraper_url = f"http://api.scraperapi.com/?api_key={scraper_api_key}&url={nba_url}"
 
-final_df = pd.concat([load_df, df1], ignore_index=True)
+custom_headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Referer': 'https://www.nba.com/',
+    'Origin': 'https://www.nba.com',
+}
 
-final_df = final_df.drop_duplicates(
-    subset=["PLAYER_ID", "GAME_ID"],
-    keep="last"
-)
+max_retries = 3
+df = None
 
-final_df.to_csv("nba_player_game_logs.csv", index=False)
+for attempt in range(max_retries):
+    try:
+        print(f"Attempt {attempt + 1} to fetch NBA data starting from {game_date}...")
+        
+        # Make the request directly
+        response = requests.get(scraper_url, headers=custom_headers, timeout=60)
+        
+        # Check if ScraperAPI successfully connected
+        if response.status_code != 200:
+            print(f"ScraperAPI Error {response.status_code}: {response.text}")
+            time.sleep(10)
+            continue
+            
+        # Safely try to read the JSON
+        try:
+            data = response.json()
+        except ValueError:
+            print("Failed to parse JSON. ScraperAPI returned an HTML error page instead of data.")
+            print("ERROR MESSAGE PREVIEW:", response.text[:200]) # This will tell us EXACTLY what went wrong!
+            time.sleep(10)
+            continue
+
+        # 3. Convert the raw NBA JSON directly into your Pandas DataFrame
+        headers = data['resultSets'][0]['headers']
+        rows = data['resultSets'][0]['rowSet']
+        df = pd.DataFrame(rows, columns=headers)
+        
+        print("Data successfully fetched and parsed!")
+        break 
+        
+    except Exception as e:
+        print(f"Fetch failed: {e}")
+        if attempt < max_retries - 1:
+            print("Sleeping for 10 seconds before retrying...")
+            time.sleep(10)
+        else:
+            print("Max retries reached.")
+            raise e 
+
+# 4. Your exact appending and saving logic remains unchanged
+if df is not None and not df.empty:
+    print(f"Found {len(df)} recent games. Merging into database...")
+    
+    df1 = df[['PLAYER_ID', 'GAME_ID', 'GAME_DATE', 'PLAYER_NAME','TEAM_ABBREVIATION','MATCHUP', 'WL','MIN','PTS', 'AST', 'REB', 'STL', 'BLK', 'OREB', 'DREB', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM','FTA']]
+
+    final_df = pd.concat([load_df, df1], ignore_index=True)
+
+    final_df = final_df.drop_duplicates(
+        subset=["PLAYER_ID", "GAME_ID"],
+        keep="last"
+    )
+
+    final_df.to_csv("nba_player_game_logs.csv", index=False)
+    print(f"Success! CSV updated. Total rows: {len(final_df)}")
+else:
+    print("No new games found to append.")
