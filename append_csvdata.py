@@ -19,7 +19,7 @@ nba_url = f"https://stats.nba.com/stats/leaguegamelog?Counter=0&DateFrom={game_d
 encoded_nba_url = urllib.parse.quote(nba_url, safe='')
 
 # 3. Add the encoded URL and premium=true to the ScraperAPI request
-scraper_url = f"http://api.scraperapi.com/?api_key={scraper_api_key}&premium=true&url={encoded_nba_url}"
+scraper_url = f"http://api.scraperapi.com/?api_key={scraper_api_key}&ultra_premium=true&keep_headers=true&url={encoded_nba_url}"
 
 custom_headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
