@@ -23,39 +23,46 @@ custom_headers = {
 }
 
 max_retries = 3
-df = None
+season_types = ["Regular Season", "PlayIn", "Playoffs"]
+all_fetched_dfs = []
 
-for attempt in range(max_retries):
-    try:
-        print(f"Attempt {attempt + 1} to fetch NBA data starting from {game_date}...")
+for s_type in season_types:
+    df_temp = None
+    for attempt in range(max_retries):
+        try:
+            print(f"Attempt {attempt + 1} to fetch {s_type} data starting from {game_date}...")
 
-        time.sleep(3)  # longer delay before each attempt
-        logs = LeagueGameLog(
-            date_from_nullable=game_date,
-            season='2025-26',
-            player_or_team_abbreviation='P',
-            headers=custom_headers,
-            timeout=120
-        )
-        df = logs.get_data_frames()[0]
+            time.sleep(3)  # longer delay before each attempt
+            logs = LeagueGameLog(
+                date_from_nullable=game_date,
+                season='2025-26',
+                player_or_team_abbreviation='P',
+                season_type_all_star=s_type,
+                headers=custom_headers,
+                timeout=120
+            )
+            df_temp = logs.get_data_frames()[0]
 
-        if df.empty:
-            print("No new games found.")
+            if not df_temp.empty:
+                print(f"Data for {s_type} successfully fetched!")
+                all_fetched_dfs.append(df_temp)
             break
 
-        print("Data successfully fetched and parsed!")
-        break
+        except Exception as e:
+            print(f"Fetch failed for {s_type}: {e}")
+            if attempt < max_retries - 1:
+                print("Sleeping for 30 seconds before retrying...")
+                time.sleep(30)
+            else:
+                print(f"Max retries reached for {s_type}.")
 
-    except Exception as e:
-        print(f"Fetch failed: {e}")
-        if attempt < max_retries - 1:
-            print("Sleeping for 30 seconds before retrying...")
-            time.sleep(30)
-        else:
-            print("Max retries reached.")
-            raise e
+# Combine all successfully fetched dataframes
+if all_fetched_dfs:
+    df = pd.concat(all_fetched_dfs, ignore_index=True)
+else:
+    df = pd.DataFrame()
 
-if df is not None and not df.empty:
+if not df.empty:
     print(f"Found {len(df)} recent games. Merging into database...")
 
     df1 = df[['PLAYER_ID', 'GAME_ID', 'GAME_DATE', 'PLAYER_NAME', 'TEAM_ABBREVIATION', 'MATCHUP', 'WL', 'MIN', 'PTS', 'AST', 'REB', 'STL', 'BLK', 'OREB', 'DREB', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA']]
