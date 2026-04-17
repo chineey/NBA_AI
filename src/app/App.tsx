@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { PlayerStatsColumn } from '@/app/components/PlayerStatsColumn';
 import { StatPrediction } from '@/app/components/StatPrediction';
 import { TrendingUp, Search, BarChart3 } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -43,6 +44,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950">
+      <SpeedInsights />
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
