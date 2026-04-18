@@ -43,17 +43,23 @@ def get_player_stats(name: str):
     Finds a player and returns their recent game stats.
     """
     try:
-        # Search for player
-        nba_players = nba_data_df[nba_data_df['PLAYER_NAME'].str.contains(name, case=False, na=False)]
-        if nba_players.empty:
+        # Find candidates by name, then pin to the exact PLAYER_ID of the first match
+        candidates = nba_data_df[nba_data_df['PLAYER_NAME'].str.contains(name, case=False, na=False)]
+        if candidates.empty:
             raise HTTPException(status_code=404, detail="Player not found")
+
+        player_id = int(candidates.iloc[0]["PLAYER_ID"])
+
+        # Filter strictly by PLAYER_ID so no other players' rows bleed in
+        nba_players = nba_data_df[nba_data_df['PLAYER_ID'] == player_id].copy()
 
         nba_players['GAME_DATE'] = pd.to_datetime(nba_players['GAME_DATE'])
         nba_players = nba_players.sort_values(by='GAME_DATE', ascending=False)
 
+        # Drop any duplicate game entries, keeping the first (most-recently appended) row
+        nba_players = nba_players.drop_duplicates(subset=['GAME_ID'], keep='first')
+
         nba_players = nba_players.fillna(0)
-        
-        player_id = int(nba_players.iloc[0]["PLAYER_ID"])
         
         # Clean up data for the frontend
         #recent_games = nba_players.head(10).to_dict(orient='records')
