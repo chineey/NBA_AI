@@ -114,10 +114,6 @@ export function StatPrediction({ player }: StatPredictionProps) {
                 <th className="px-3 py-3 text-left text-xs text-gray-400">MATCHUP</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">W/L</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">MIN</th>
-                <th className="px-3 py-3 text-center text-xs text-gray-400">FG_PCT</th>
-                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3M</th>
-                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3A</th>
-                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3_PCT</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">PTS</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">AST</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">REB</th>
@@ -125,6 +121,10 @@ export function StatPrediction({ player }: StatPredictionProps) {
                 <th className="px-3 py-3 text-center text-xs text-gray-400">BLK</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">OREB</th>
                 <th className="px-3 py-3 text-center text-xs text-gray-400">DREB</th>
+                <th className="px-3 py-3 text-center text-xs text-gray-400">FG_PCT</th>
+                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3M</th>
+                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3A</th>
+                <th className="px-3 py-3 text-center text-xs text-gray-400">FG3_PCT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -146,10 +146,6 @@ export function StatPrediction({ player }: StatPredictionProps) {
                     </span>
                   </td>
                   <td className="px-3 py-3 text-center text-gray-300">{game.min}</td>
-                  <td className="px-3 py-3 text-center text-gray-300">{(game.fgPct * 100).toFixed(1)}%</td>
-                  <td className="px-3 py-3 text-center text-gray-300">{game.fg3m}</td>
-                  <td className="px-3 py-3 text-center text-gray-300">{game.fg3a}</td>
-                  <td className="px-3 py-3 text-center text-gray-300">{(game.fg3Pct * 100).toFixed(1)}%</td>
                   <td className="px-3 py-3 text-center text-white">{game.pts}</td>
                   <td className="px-3 py-3 text-center text-white">{game.ast}</td>
                   <td className="px-3 py-3 text-center text-white">{game.reb}</td>
@@ -157,6 +153,10 @@ export function StatPrediction({ player }: StatPredictionProps) {
                   <td className="px-3 py-3 text-center text-gray-300">{game.blk}</td>
                   <td className="px-3 py-3 text-center text-gray-300">{game.oreb}</td>
                   <td className="px-3 py-3 text-center text-gray-300">{game.dreb}</td>
+                  <td className="px-3 py-3 text-center text-gray-300">{(game.fgPct * 100).toFixed(1)}%</td>
+                  <td className="px-3 py-3 text-center text-gray-300">{game.fg3m}</td>
+                  <td className="px-3 py-3 text-center text-gray-300">{game.fg3a}</td>
+                  <td className="px-3 py-3 text-center text-gray-300">{(game.fg3Pct * 100).toFixed(1)}%</td>
                 </tr>
               ))}
             </tbody>
