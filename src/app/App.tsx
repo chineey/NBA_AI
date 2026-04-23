@@ -1,13 +1,28 @@
 import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { AuthPage } from './components/AuthPage';
 import { PlayerStatsColumn } from '@/app/components/PlayerStatsColumn';
 import { StatPrediction } from '@/app/components/StatPrediction';
 import { TrendingUp, Search, BarChart3 } from 'lucide-react';
 
 export default function App() {
+  const { user, signOut, loading: authLoading } = useAuth();
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
-  const [searchQuery, setSearchQuery] = useState(''); // 1. Start with empty search
+  const [searchQuery, setSearchQuery] = useState('');
   const [players, setPlayers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
 
   // 2. Removed the useEffect hook entirely to prevent auto-fetching
 
@@ -17,8 +32,7 @@ export default function App() {
     setLoading(true);
     try {
       const encodedName = encodeURIComponent(name); 
-      const response = await fetch(`https://nba-ai.onrender.com/player/${encodedName}`);
-      //const response = await fetch(`http://127.0.0.1:8000/player/${encodedName}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/player/${encodedName}`);
       
       if (!response.ok) {
         throw new Error('Player not found');
@@ -51,6 +65,17 @@ export default function App() {
             <h1 className="text-2xl text-white font-bold tracking-tight">NBA Betting Analysis</h1>
           </div>
           
+          {/* User + Sign Out */}
+          <div className="flex items-center gap-3">
+            <span className="text-gray-400 text-sm">{user?.email}</span>
+            <button
+              onClick={signOut}
+              className="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
+
           {/* Header Search Bar */}
           <div className="relative w-full md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />

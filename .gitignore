@@ -4,3 +4,7 @@ create_data.py
 .vscode
 player_id.json
 __pycache__
+.env.production
+.env.development
+UI_MAP.md
+AUTH_GUIDE.md

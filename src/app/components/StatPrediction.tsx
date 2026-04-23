@@ -52,7 +52,7 @@ export function StatPrediction({ player }: StatPredictionProps) {
         stats: player.recentGames 
       };
 
-      const response = await fetch('https://nba-ai.onrender.com/predict', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,42 +185,22 @@ export function StatPrediction({ player }: StatPredictionProps) {
              {/* POINTS */}
             <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
               <div className="text-xs text-gray-500 mb-1">PTS</div>
-              <input
-                type="number"
-                value={prediction.pts}
-                onChange={(e) => setPrediction({ ...prediction, pts: Number(e.target.value) })}
-                className="w-full bg-transparent text-xl text-white focus:outline-none"
-              />
+              <div className="text-xl text-white">{prediction.pts}</div>
             </div>
              {/* ASSISTS */}
             <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
               <div className="text-xs text-gray-500 mb-1">AST</div>
-              <input
-                type="number"
-                value={prediction.ast}
-                onChange={(e) => setPrediction({ ...prediction, ast: Number(e.target.value) })}
-                className="w-full bg-transparent text-xl text-white focus:outline-none"
-              />
+              <div className="text-xl text-white">{prediction.ast}</div>
             </div>
              {/* REBOUNDS */}
             <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
               <div className="text-xs text-gray-500 mb-1">REB</div>
-              <input
-                type="number"
-                value={prediction.reb}
-                onChange={(e) => setPrediction({ ...prediction, reb: Number(e.target.value) })}
-                className="w-full bg-transparent text-xl text-white focus:outline-none"
-              />
+              <div className="text-xl text-white">{prediction.reb}</div>
             </div>
              {/* 3-POINTERS */}
             <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
               <div className="text-xs text-gray-500 mb-1">FG3M</div>
-              <input
-                type="number"
-                value={prediction.fg3m}
-                onChange={(e) => setPrediction({ ...prediction, fg3m: Number(e.target.value) })}
-                className="w-full bg-transparent text-xl text-white focus:outline-none"
-              />
+              <div className="text-xl text-white">{prediction.fg3m}</div>
             </div>
           </div>
         </div>
