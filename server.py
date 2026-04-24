@@ -17,7 +17,7 @@ load_dotenv()
 app = FastAPI()
 
 # 2. Allow your React App to talk to this Server (CORS)
-_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 
 app.add_middleware(
     CORSMiddleware,
