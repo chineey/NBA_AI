@@ -23,12 +23,20 @@ type TeamGame = {
   tov: number | null;
 };
 
+type NextGame = {
+  gameDate: string;
+  opponent: string;
+  homeAway: string;
+  matchup: string;
+};
+
 type Team = {
   abbr: string;
   name: string;
   recentGames: TeamGame[];
   seasonAvg: { pts: number; reb: number; ast: number; fg3m: number };
   totalGames: number;
+  nextGame?: NextGame | null;
 };
 
 type TeamPrediction = {
@@ -114,9 +122,16 @@ export function TeamPrediction({ team }: { team: Team }) {
             <h2 className="text-2xl text-white mb-1">{team.name}</h2>
             <p className="text-gray-400">NBA • {team.totalGames} games this season</p>
           </div>
-          <div className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg text-center">
-            <div className="text-xs text-orange-400">Abbreviation</div>
-            <div className="text-white font-bold text-lg">{team.abbr}</div>
+          <div className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg text-right">
+            <div className="text-xs text-orange-400 mb-0.5">Next Game</div>
+            {team.nextGame ? (
+              <>
+                <div className="text-white font-medium">{team.nextGame.matchup}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{team.nextGame.gameDate} · {team.nextGame.homeAway}</div>
+              </>
+            ) : (
+              <div className="text-gray-500 text-sm">TBD</div>
+            )}
           </div>
         </div>
       </div>

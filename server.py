@@ -6,6 +6,7 @@ from google.genai import types
 from dotenv import load_dotenv
 import os
 import pandas as pd
+import time
 
 load_dotenv()
 app = FastAPI()
@@ -34,6 +35,84 @@ class TeamPredictionRequest(BaseModel):
 
 nba_data_df = pd.read_csv('nba_player_game_logs.csv')
 HAS_TOV = 'TOV' in nba_data_df.columns
+
+_NBA_HEADERS = {
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Connection': 'keep-alive',
+    'Host': 'stats.nba.com',
+    'Origin': 'https://www.nba.com',
+    'Referer': 'https://www.nba.com/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'x-nba-stats-origin': 'stats',
+    'x-nba-stats-token': 'true',
+}
+
+_schedule_cache: pd.DataFrame | None = None
+
+
+def _fetch_schedule() -> pd.DataFrame | None:
+    global _schedule_cache
+    if _schedule_cache is not None:
+        return _schedule_cache
+    try:
+        from nba_api.stats.endpoints import LeagueSchedule
+        time.sleep(1)
+        sched = LeagueSchedule(league_id='00', season_year='2025-26', headers=_NBA_HEADERS)
+        df = sched.get_data_frames()[0]
+        _schedule_cache = df
+        print(f"Schedule cached: {len(df)} games, columns: {df.columns.tolist()[:6]}...")
+        return df
+    except Exception as e:
+        print(f"Schedule fetch failed: {e}")
+        return None
+
+
+def _col(df: pd.DataFrame, *candidates: str) -> str | None:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def get_next_game(team_abbr: str) -> dict | None:
+    df = _fetch_schedule()
+    if df is None:
+        return None
+    try:
+        home_col  = _col(df, 'homeTeamAbbreviation', 'HOME_TEAM_ABBREVIATION')
+        away_col  = _col(df, 'awayTeamAbbreviation', 'VISITOR_TEAM_ABBREVIATION')
+        date_col  = _col(df, 'gameDateEst', 'GAME_DATE_EST', 'gameDateTimeEst')
+        if not all([home_col, away_col, date_col]):
+            print(f"Unexpected schedule columns: {df.columns.tolist()}")
+            return None
+
+        today = pd.Timestamp.now().normalize()
+        dates = pd.to_datetime(df[date_col], utc=True).dt.tz_localize(None).dt.normalize()
+        future = df[(dates >= today) & (
+            (df[home_col] == team_abbr) | (df[away_col] == team_abbr)
+        )].copy()
+        future['_date'] = dates[future.index]
+        future = future.sort_values('_date')
+
+        if future.empty:
+            return None
+
+        row = future.iloc[0]
+        is_home  = row[home_col] == team_abbr
+        opponent = row[away_col] if is_home else row[home_col]
+        game_date = row['_date'].strftime('%Y-%m-%d')
+        matchup   = f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}"
+
+        return {
+            "gameDate": game_date,
+            "opponent": opponent,
+            "homeAway": "HOME" if is_home else "AWAY",
+            "matchup":  matchup,
+        }
+    except Exception as e:
+        print(f"Next game lookup failed for {team_abbr}: {e}")
+        return None
 
 ABBR_TO_FULL = {
     "ATL": "Atlanta Hawks", "BOS": "Boston Celtics", "BKN": "Brooklyn Nets",
@@ -132,13 +211,17 @@ def get_player_stats(name: str):
             "ast": round(float(nba_players["AST"].mean()), 1),
         }
 
+        team_abbr = str(nba_players.iloc[0]["TEAM_ABBREVIATION"])
+        next_game = get_next_game(team_abbr)
+
         return {
             "id": player_id,
             "name": nba_players.iloc[0]["PLAYER_NAME"],
-            "team": "NBA",
+            "team": team_abbr,
             "position": "Player",
             "recentGames": recent_games,
             "seasonAvg": season_avg,
+            "nextGame": next_game,
         }
 
     except HTTPException:
@@ -225,9 +308,24 @@ def predict_performance(request: PredictionRequest):
         for g in last_3
     ])
 
+    player_team = str(player_df.iloc[0]['TEAM_ABBREVIATION'])
+    next_game = get_next_game(player_team)
+    if next_game:
+        opp_full = ABBR_TO_FULL.get(next_game['opponent'], next_game['opponent'])
+        next_game_section = f"""
+--- NEXT SCHEDULED GAME ---
+Date: {next_game['gameDate']}
+Opponent: {next_game['opponent']} ({opp_full})
+Location: {next_game['homeAway']}
+Matchup: {next_game['matchup']}
+"""
+    else:
+        next_game_section = "\n--- NEXT SCHEDULED GAME ---\nNot available.\n"
+
     prompt = f"""You are an expert NBA analyst and sports betting predictor.
 
 PLAYER: {candidates.iloc[0]['PLAYER_NAME']}
+TEAM: {player_team}
 GAMES IN DATASET: {len(all_games)}
 
 --- LAST 5 GAMES AVERAGES ---
@@ -242,15 +340,15 @@ MIN: {s_min}  |  FG%: {s_fgpct}
 --- TRENDS (last 3 vs prior 3 games) ---
 PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(trend_reb)}
 
---- NEXT GAME CONTEXT ---
-Most recent game was: {location}
+--- CURRENT GAME CONTEXT ---
+Last game location: {location}
 Fatigue: {"BACK-TO-BACK — player played yesterday, expect reduced efficiency" if is_b2b else "Normal rest"}
-
+{next_game_section}
 --- LAST 3 GAMES (most recent first) ---
 {last_3_lines}
 
 Based on all of the above, predict this player's stats for their NEXT game.
-Factor in: hot/cold streaks, fatigue from back-to-back, home vs away splits, recent form vs season baseline.
+Factor in: hot/cold streaks, fatigue, home vs away splits, the specific opponent, recent form vs season baseline.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,
@@ -371,6 +469,7 @@ def get_team_stats(name: str):
             "recentGames": recent,
             "seasonAvg": season_avg,
             "totalGames": len(games),
+            "nextGame": get_next_game(abbr),
         }
 
     except HTTPException:
@@ -440,6 +539,7 @@ def predict_team_performance(request: TeamPredictionRequest):
 
     last_3_lines = "\n".join([
         f"  {g['gameDate']} | {g.get('matchup','')} | {g.get('wl','')} | "
+        f"{g.get('pts',0)}-{g.get('oppScore',0)} | "
         f"{g.get('pts',0)} PTS, {g.get('ast',0)} AST, {g.get('reb',0)} REB, "
         f"{g.get('fg3m',0)}/{g.get('fg3a',0)} 3P, "
         f"FG%: {g.get('fgPct',0):.1%}, {g.get('ftm',0)}/{g.get('fta',0)} FT"
@@ -447,6 +547,19 @@ def predict_team_performance(request: TeamPredictionRequest):
     ])
 
     full_name = ABBR_TO_FULL.get(abbr, abbr)
+
+    next_game = get_next_game(abbr)
+    if next_game:
+        opp_full = ABBR_TO_FULL.get(next_game['opponent'], next_game['opponent'])
+        next_game_section = f"""
+--- NEXT SCHEDULED GAME ---
+Date: {next_game['gameDate']}
+Opponent: {next_game['opponent']} ({opp_full})
+Location: {next_game['homeAway']}
+Matchup: {next_game['matchup']}
+"""
+    else:
+        next_game_section = "\n--- NEXT SCHEDULED GAME ---\nNot available.\n"
 
     prompt = f"""You are an expert NBA analyst and sports betting predictor.
 
@@ -464,15 +577,15 @@ PTS: {s_pts}  |  AST: {s_ast}  |  REB: {s_reb}  |  FG3M: {s_fg3m}  |  FG%: {s_fg
 --- TRENDS (last 3 vs prior 3 games) ---
 PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(trend_reb)}
 
---- NEXT GAME CONTEXT ---
-Most recent game was: {location}
+--- RECENT FORM ---
+Last game location: {location}
 W-L record last 5: {wins}-{5-wins}
-
---- LAST 3 GAMES (most recent first) ---
+{next_game_section}
+--- LAST 3 GAMES (most recent first, score shown as US-OPP) ---
 {last_3_lines}
 
 Based on all of the above, predict this TEAM's stats for their NEXT game.
-Factor in: hot/cold streaks, home vs away, recent form vs season baseline, offensive/defensive trends.
+Factor in: hot/cold streaks, home vs away, the specific opponent, recent form vs season baseline, offensive/defensive trends.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,

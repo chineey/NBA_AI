@@ -22,12 +22,20 @@ type Game = {
   tov?: number | null;
 };
 
+type NextGame = {
+  gameDate: string;
+  opponent: string;
+  homeAway: string;
+  matchup: string;
+};
+
 type Player = {
   id: number;
   name: string;
   team: string;
   position: string;
   recentGames: Game[];
+  nextGame?: NextGame | null;
 };
 
 type Prediction = {
@@ -131,9 +139,16 @@ export function StatPrediction({ player }: StatPredictionProps) {
             <h2 className="text-2xl text-white mb-1">{player.name}</h2>
             <p className="text-gray-400">{player.team} • {player.position}</p>
           </div>
-          <div className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg">
-            <div className="text-xs text-orange-400">Next Game</div>
-            <div className="text-white">1/23 vs MIA</div>
+          <div className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg text-right">
+            <div className="text-xs text-orange-400 mb-0.5">Next Game</div>
+            {player.nextGame ? (
+              <>
+                <div className="text-white font-medium">{player.nextGame.matchup}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{player.nextGame.gameDate} · {player.nextGame.homeAway}</div>
+              </>
+            ) : (
+              <div className="text-gray-500 text-sm">TBD</div>
+            )}
           </div>
         </div>
       </div>
