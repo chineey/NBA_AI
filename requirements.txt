@@ -1,5 +1,5 @@
 apscheduler==3.10.4
-supabase==2.15.2
+supabase==2.3.5
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.1

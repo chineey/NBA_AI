@@ -24,12 +24,12 @@ app.add_middleware(
 client = genai.Client(api_key=os.getenv("GEMINI_API"))
 
 # ── Supabase client ──────────────────────────────────────────────────────────
-from supabase import create_client, Client as SupabaseClient
-
-_sb: SupabaseClient = create_client(
-    os.getenv("SUPABASE_URL", ""),
-    os.getenv("SUPABASE_SERVICE_KEY", ""),
-)
+_sb = None
+_sb_url = os.getenv("SUPABASE_URL", "")
+_sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+if _sb_url and _sb_key:
+    from supabase import create_client
+    _sb = create_client(_sb_url, _sb_key)
 
 _COLS = [
     'PLAYER_ID','GAME_ID','GAME_DATE','PLAYER_NAME','TEAM_ABBREVIATION',
