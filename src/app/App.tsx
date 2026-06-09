@@ -6,13 +6,16 @@ import { StatPrediction } from '@/app/components/StatPrediction';
 import { TeamsGrid } from '@/app/components/TeamsGrid';
 import { TeamRoster, type RosterPlayer } from '@/app/components/TeamRoster';
 import { TeamPrediction } from '@/app/components/TeamPrediction';
+import { FootballApp } from '@/app/components/football/FootballApp';
 import { TrendingUp, Search, User, Shield, ArrowLeft } from 'lucide-react';
 
+type Sport = 'nba' | 'football';
 type Mode = 'players' | 'teams';
 type TeamView = 'grid' | 'roster' | 'player' | 'prediction';
 
 export default function App() {
   const { user, signOut, loading: authLoading } = useAuth();
+  const [sport, setSport] = useState<Sport>('nba');
   const [mode, setMode] = useState<Mode>('players');
 
   // Players mode
@@ -211,37 +214,63 @@ export default function App() {
     );
   };
 
+  const accentClass = sport === 'football' ? 'text-green-500' : 'text-orange-500';
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Header */}
       <header className="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4 flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-3">
-            <TrendingUp className="size-8 text-orange-500" />
-            <h1 className="text-2xl text-white font-bold tracking-tight">NBA Betting Analysis</h1>
+            <TrendingUp className={`size-8 ${accentClass}`} />
+            <h1 className="text-2xl text-white font-bold tracking-tight">
+              {sport === 'football' ? 'Football Analysis' : 'NBA Betting Analysis'}
+            </h1>
           </div>
 
-          {/* Mode Toggle */}
+          {/* Sport Toggle */}
           <div className="flex items-center gap-1 bg-gray-950 border border-gray-800 rounded-lg p-1">
             <button
-              onClick={() => switchMode('players')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                mode === 'players' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+              onClick={() => setSport('nba')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                sport === 'nba' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              <User className="size-3.5" />
-              Players
+              🏀 NBA
             </button>
             <button
-              onClick={() => switchMode('teams')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                mode === 'teams' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+              onClick={() => setSport('football')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                sport === 'football' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              <Shield className="size-3.5" />
-              Teams
+              ⚽ Football
             </button>
           </div>
+
+          {/* NBA sub-mode toggle — only shown for NBA */}
+          {sport === 'nba' && (
+            <div className="flex items-center gap-1 bg-gray-950 border border-gray-800 rounded-lg p-1">
+              <button
+                onClick={() => switchMode('players')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === 'players' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <User className="size-3.5" />
+                Players
+              </button>
+              <button
+                onClick={() => switchMode('teams')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === 'teams' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Shield className="size-3.5" />
+                Teams
+              </button>
+            </div>
+          )}
 
           {/* User + Sign Out */}
           <div className="flex items-center gap-3">
@@ -254,8 +283,8 @@ export default function App() {
             </button>
           </div>
 
-          {/* Search bar — players mode only */}
-          {mode === 'players' && (
+          {/* Search bar — NBA players mode only */}
+          {sport === 'nba' && mode === 'players' && (
             <div className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
               <input
@@ -273,7 +302,11 @@ export default function App() {
 
       {/* Main Content */}
       <div className="container mx-auto px-6 py-8">
-        {mode === 'players' ? renderPlayersContent() : renderTeamsContent()}
+        {sport === 'football' ? (
+          <FootballApp />
+        ) : (
+          mode === 'players' ? renderPlayersContent() : renderTeamsContent()
+        )}
       </div>
     </div>
   );
