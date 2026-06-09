@@ -38,7 +38,7 @@ _cache_errors:   list       = []
 _key_present:    bool       = bool(os.getenv("FOOTBALL_API_KEY", ""))
 
 
-def _get(path: str, timeout: int = 15) -> dict:
+def _get(path: str, timeout: int = 8) -> dict:
     with httpx.Client(timeout=timeout) as c:
         r = c.get(f"{FOOTBALL_BASE}{path}", headers=_FBD_HEADERS)
         if r.status_code == 429:
@@ -61,7 +61,7 @@ def _load_global_cache() -> None:
     print(f"[football cache] starting load, key_present={_key_present}")
 
     for code in TOP5_CODES:
-        time.sleep(0.4)
+        time.sleep(6.5)  # 10 req/min limit = 6s minimum between calls
         try:
             td = _get(f"/competitions/{code}/teams")
             for t in td.get("teams", []):
@@ -80,7 +80,7 @@ def _load_global_cache() -> None:
             errors.append(msg)
             print(f"[football cache] {msg}")
 
-        time.sleep(0.4)
+        time.sleep(6.5)
         try:
             sd = _get(f"/competitions/{code}/scorers?limit=100")
             for s in sd.get("scorers", []):
