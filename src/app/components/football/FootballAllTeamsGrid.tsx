@@ -33,7 +33,7 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
   const [search, setSearch]         = useState('');
   const [leagueFilter, setLeagueFilter] = useState('All');
 
-  const BASE = import.meta.env.VITE_FOOTBALL_API_URL;
+  const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetch(`${BASE}/football/all-teams`)

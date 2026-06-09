@@ -44,7 +44,7 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
   const [searched, setSearched] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
-  const BASE = import.meta.env.VITE_FOOTBALL_API_URL;
+  const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   const handleSearch = async () => {
     const q = query.trim();

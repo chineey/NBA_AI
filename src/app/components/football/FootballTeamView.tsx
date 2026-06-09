@@ -127,7 +127,7 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [posFilter, setPosFilter] = useState<string>('All');
 
-  const BASE = import.meta.env.VITE_FOOTBALL_API_URL;
+  const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     setSquadData(null);

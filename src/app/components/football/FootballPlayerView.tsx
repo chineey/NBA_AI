@@ -86,7 +86,7 @@ export function FootballPlayerView({
   );
   const [hasGenerated, setHasGenerated] = useState(false);
 
-  const BASE = import.meta.env.VITE_FOOTBALL_API_URL;
+  const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     setLoading(true);
