@@ -58,7 +58,7 @@ def _load_global_cache() -> None:
     new_scorers:  list     = []
     seen_team_ids: set[int] = set()
     errors: list = []
-    print(f"[football cache] starting load, key_present={_key_present}")
+    print(f"[football cache] starting load, key_present={_key_present}", flush=True)
 
     try:
         for code in TOP5_CODES:
@@ -79,7 +79,7 @@ def _load_global_cache() -> None:
             except Exception as e:
                 msg = f"teams/{code}: {e}"
                 errors.append(msg)
-                print(f"[football cache] {msg}")
+                print(f"[football cache] {msg}", flush=True)
 
             time.sleep(6.5)
             try:
@@ -105,7 +105,7 @@ def _load_global_cache() -> None:
             except Exception as e:
                 msg = f"scorers/{code}: {e}"
                 errors.append(msg)
-                print(f"[football cache] {msg}")
+                print(f"[football cache] {msg}", flush=True)
 
         _all_teams_flat = sorted(new_teams, key=lambda x: x["name"])
         _scorers_flat   = new_scorers
@@ -114,11 +114,11 @@ def _load_global_cache() -> None:
 
     except Exception as e:
         errors.append(f"FATAL: {e}")
-        print(f"[football cache] FATAL: {e}")
+        print(f"[football cache] FATAL: {e}", flush=True)
     finally:
         _cache_errors = errors
         _cache_ready  = True
-        print(f"[football cache] done: {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorers, {len(errors)} errors")
+        print(f"[football cache] done: {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorers, {len(errors)} errors", flush=True)
 
 
 def _ensure_cache() -> None:
@@ -245,7 +245,8 @@ def get_all_teams():
 
 @football_router.get("/football/players/search")
 def search_players(name: str = Query(..., min_length=2)):
-    _ensure_cache()
+    if not _cache_ready:
+        return []
     q    = name.strip().lower()
     hits = [e for e in _scorers_flat if q in e["name"].lower()]
     seen: set[int] = set()
@@ -346,7 +347,6 @@ def get_player(
     competition_code: str = Query(...),
 ):
     person = _get(f"/persons/{player_id}")
-    _ensure_cache()
     cached = _scorers_by_id.get(player_id)
     if cached and cached["competitionCode"] == competition_code.upper():
         scorer_stats = {

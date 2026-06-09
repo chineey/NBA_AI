@@ -32,15 +32,36 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
   const [error, setError]           = useState('');
   const [search, setSearch]         = useState('');
   const [leagueFilter, setLeagueFilter] = useState('All');
+  const [cacheWait, setCacheWait]   = useState(false);
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
-    fetch(`${BASE}/football/all-teams`)
-      .then(r => { if (!r.ok) throw new Error(`Status ${r.status}`); return r.json(); })
-      .then(setTeams)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchTeams = () => {
+      fetch(`${BASE}/football/all-teams`)
+        .then(r => { if (!r.ok) throw new Error(`Status ${r.status}`); return r.json(); })
+        .then((data: TeamEntry[]) => {
+          if (cancelled) return;
+          if (data.length === 0) {
+            // Cache still loading — retry in 10s
+            setCacheWait(true);
+            retryTimer = setTimeout(fetchTeams, 10_000);
+          } else {
+            setCacheWait(false);
+            setTeams(data);
+            setLoading(false);
+          }
+        })
+        .catch(e => {
+          if (!cancelled) { setError(e.message); setLoading(false); }
+        });
+    };
+
+    fetchTeams();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   const leagues = ['All', 'PL', 'PD', 'BL1', 'SA', 'FL1'];
@@ -54,7 +75,11 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <Loader2 className="size-8 text-green-500 animate-spin" />
-        <p className="text-green-500 animate-pulse text-sm">Loading teams from top 5 leagues…</p>
+        <p className="text-green-500 animate-pulse text-sm">
+          {cacheWait
+            ? 'Server is loading team data for the first time (~2 min). Checking again in 10s…'
+            : 'Loading teams from top 5 leagues…'}
+        </p>
       </div>
     );
   }
@@ -63,7 +88,7 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
     return (
       <div className="text-center py-16 space-y-2">
         <p className="text-red-400">Failed to load teams: {error}</p>
-        <p className="text-gray-500 text-sm">Make sure the football server is running on port 8001.</p>
+        <p className="text-gray-500 text-sm">Check that the backend is reachable.</p>
       </div>
     );
   }
