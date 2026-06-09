@@ -24,7 +24,8 @@ export function FootballApp() {
   // Players mode
   const [selectedSearchResult, setSelectedSearchResult] = useState<PlayerSearchResult | null>(null);
 
-  // Teams mode
+  // Teams mode — teams data lifted here so it persists across grid ↔ team ↔ player navigation
+  const [allTeams, setAllTeams]                   = useState<TeamEntry[]>([]);
   const [teamsView, setTeamsView]                 = useState<TeamsView>('grid');
   const [selectedTeam, setSelectedTeam]           = useState<TeamEntry | null>(null);
   const [selectedSquadPlayer, setSelectedSquadPlayer] = useState<SquadPlayer | null>(null);
@@ -143,7 +144,11 @@ export function FootballApp() {
           )}
 
           {teamsView === 'grid' && (
-            <FootballAllTeamsGrid onSelectTeam={handleSelectTeam} />
+            <FootballAllTeamsGrid
+              teams={allTeams}
+              onTeamsLoaded={setAllTeams}
+              onSelectTeam={handleSelectTeam}
+            />
           )}
 
           {teamsView === 'team' && selectedTeam && (

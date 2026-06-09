@@ -23,12 +23,13 @@ const LEAGUE_LABELS: Record<string, string> = {
 };
 
 type Props = {
+  teams: TeamEntry[];
+  onTeamsLoaded: (teams: TeamEntry[]) => void;
   onSelectTeam: (team: TeamEntry) => void;
 };
 
-export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
-  const [teams, setTeams]           = useState<TeamEntry[]>([]);
-  const [loading, setLoading]       = useState(true);
+export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Props) {
+  const [loading, setLoading]       = useState(teams.length === 0);
   const [error, setError]           = useState('');
   const [search, setSearch]         = useState('');
   const [leagueFilter, setLeagueFilter] = useState('All');
@@ -37,6 +38,8 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
+    if (teams.length > 0) return; // Already loaded — skip fetch
+
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -46,12 +49,11 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
         .then((data: TeamEntry[]) => {
           if (cancelled) return;
           if (data.length === 0) {
-            // Cache still loading — retry in 10s
             setCacheWait(true);
             retryTimer = setTimeout(fetchTeams, 10_000);
           } else {
             setCacheWait(false);
-            setTeams(data);
+            onTeamsLoaded(data);
             setLoading(false);
           }
         })
@@ -65,7 +67,7 @@ export function FootballAllTeamsGrid({ onSelectTeam }: Props) {
   }, []);
 
   const leagues = ['All', 'PL', 'PD', 'BL1', 'SA', 'FL1'];
-  const filtered = teams.filter(t => {
+  const filtered = (teams).filter(t => {
     const q   = search.toLowerCase();
     const hit = !q || t.name.toLowerCase().includes(q) || (t.shortName || '').toLowerCase().includes(q) || (t.tla || '').toLowerCase().includes(q);
     return hit && (leagueFilter === 'All' || t.competition.code === leagueFilter);
