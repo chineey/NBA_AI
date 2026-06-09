@@ -34,6 +34,8 @@ _scorers_flat:   list       = []
 _cache_date:     _date|None = None
 _cache_lock:     Lock       = Lock()
 _cache_ready:    bool       = False
+_cache_errors:   list       = []
+_key_present:    bool       = bool(os.getenv("FOOTBALL_API_KEY", ""))
 
 
 def _get(path: str, timeout: int = 15) -> dict:
@@ -50,11 +52,13 @@ def _get(path: str, timeout: int = 15) -> dict:
 
 
 def _load_global_cache() -> None:
-    global _all_teams_flat, _scorers_by_id, _scorers_flat, _cache_date, _cache_ready
+    global _all_teams_flat, _scorers_by_id, _scorers_flat, _cache_date, _cache_ready, _cache_errors
 
     new_teams:    list     = []
     new_scorers:  list     = []
     seen_team_ids: set[int] = set()
+    errors: list = []
+    print(f"[football cache] starting load, key_present={_key_present}")
 
     for code in TOP5_CODES:
         time.sleep(0.4)
@@ -72,7 +76,9 @@ def _load_global_cache() -> None:
                         "competition": {"code": code, "name": TOP5_NAMES[code]},
                     })
         except Exception as e:
-            print(f"[football cache] teams/{code} failed: {e}")
+            msg = f"teams/{code}: {e}"
+            errors.append(msg)
+            print(f"[football cache] {msg}")
 
         time.sleep(0.4)
         try:
@@ -96,14 +102,17 @@ def _load_global_cache() -> None:
                     "penalties":       s.get("penalties"),
                 })
         except Exception as e:
-            print(f"[football cache] scorers/{code} failed: {e}")
+            msg = f"scorers/{code}: {e}"
+            errors.append(msg)
+            print(f"[football cache] {msg}")
 
     _all_teams_flat = sorted(new_teams, key=lambda x: x["name"])
     _scorers_flat   = new_scorers
     _scorers_by_id  = {e["id"]: e for e in new_scorers if e["id"]}
     _cache_date     = _date.today()
+    _cache_errors   = errors
     _cache_ready    = True
-    print(f"[football cache] loaded {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorer entries")
+    print(f"[football cache] loaded {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorer entries, {len(errors)} errors")
 
 
 def _ensure_cache() -> None:
@@ -196,7 +205,14 @@ football_router = APIRouter()
 
 @football_router.get("/football/health")
 def health():
-    return {"status": "ok", "cacheReady": _cache_ready, "teams": len(_all_teams_flat)}
+    return {
+        "status":     "ok",
+        "cacheReady": _cache_ready,
+        "teams":      len(_all_teams_flat),
+        "scorers":    len(_scorers_flat),
+        "keyPresent": _key_present,
+        "errors":     _cache_errors,
+    }
 
 
 @football_router.get("/football/all-teams")
