@@ -60,59 +60,65 @@ def _load_global_cache() -> None:
     errors: list = []
     print(f"[football cache] starting load, key_present={_key_present}")
 
-    for code in TOP5_CODES:
-        time.sleep(6.5)  # 10 req/min limit = 6s minimum between calls
-        try:
-            td = _get(f"/competitions/{code}/teams")
-            for t in td.get("teams", []):
-                if t["id"] not in seen_team_ids:
-                    seen_team_ids.add(t["id"])
-                    new_teams.append({
-                        "id":          t["id"],
-                        "name":        t.get("name", ""),
-                        "shortName":   t.get("shortName") or t.get("name", ""),
-                        "tla":         t.get("tla", ""),
-                        "crest":       t.get("crest", ""),
-                        "competition": {"code": code, "name": TOP5_NAMES[code]},
+    try:
+        for code in TOP5_CODES:
+            time.sleep(6.5)  # 10 req/min limit = 6s minimum between calls
+            try:
+                td = _get(f"/competitions/{code}/teams")
+                for t in td.get("teams", []):
+                    if t["id"] not in seen_team_ids:
+                        seen_team_ids.add(t["id"])
+                        new_teams.append({
+                            "id":          t["id"],
+                            "name":        t.get("name", ""),
+                            "shortName":   t.get("shortName") or t.get("name", ""),
+                            "tla":         t.get("tla", ""),
+                            "crest":       t.get("crest", ""),
+                            "competition": {"code": code, "name": TOP5_NAMES[code]},
+                        })
+            except Exception as e:
+                msg = f"teams/{code}: {e}"
+                errors.append(msg)
+                print(f"[football cache] {msg}")
+
+            time.sleep(6.5)
+            try:
+                sd = _get(f"/competitions/{code}/scorers?limit=100")
+                for s in sd.get("scorers", []):
+                    p  = s.get("player", {})
+                    tm = s.get("team",   {})
+                    new_scorers.append({
+                        "id":              p.get("id"),
+                        "name":            p.get("name", ""),
+                        "position":        p.get("position") or p.get("section", ""),
+                        "nationality":     p.get("nationality", ""),
+                        "teamId":          tm.get("id"),
+                        "teamName":        tm.get("shortName") or tm.get("name", ""),
+                        "teamCrest":       tm.get("crest", ""),
+                        "competitionCode": code,
+                        "competitionName": TOP5_NAMES[code],
+                        "goals":           s.get("goals")        or 0,
+                        "assists":         s.get("assists")       or 0,
+                        "playedMatches":   s.get("playedMatches") or 0,
+                        "penalties":       s.get("penalties"),
                     })
-        except Exception as e:
-            msg = f"teams/{code}: {e}"
-            errors.append(msg)
-            print(f"[football cache] {msg}")
+            except Exception as e:
+                msg = f"scorers/{code}: {e}"
+                errors.append(msg)
+                print(f"[football cache] {msg}")
 
-        time.sleep(6.5)
-        try:
-            sd = _get(f"/competitions/{code}/scorers?limit=100")
-            for s in sd.get("scorers", []):
-                p  = s.get("player", {})
-                tm = s.get("team",   {})
-                new_scorers.append({
-                    "id":              p.get("id"),
-                    "name":            p.get("name", ""),
-                    "position":        p.get("position") or p.get("section", ""),
-                    "nationality":     p.get("nationality", ""),
-                    "teamId":          tm.get("id"),
-                    "teamName":        tm.get("shortName") or tm.get("name", ""),
-                    "teamCrest":       tm.get("crest", ""),
-                    "competitionCode": code,
-                    "competitionName": TOP5_NAMES[code],
-                    "goals":           s.get("goals")        or 0,
-                    "assists":         s.get("assists")       or 0,
-                    "playedMatches":   s.get("playedMatches") or 0,
-                    "penalties":       s.get("penalties"),
-                })
-        except Exception as e:
-            msg = f"scorers/{code}: {e}"
-            errors.append(msg)
-            print(f"[football cache] {msg}")
+        _all_teams_flat = sorted(new_teams, key=lambda x: x["name"])
+        _scorers_flat   = new_scorers
+        _scorers_by_id  = {e["id"]: e for e in new_scorers if e["id"]}
+        _cache_date     = _date.today()
 
-    _all_teams_flat = sorted(new_teams, key=lambda x: x["name"])
-    _scorers_flat   = new_scorers
-    _scorers_by_id  = {e["id"]: e for e in new_scorers if e["id"]}
-    _cache_date     = _date.today()
-    _cache_errors   = errors
-    _cache_ready    = True
-    print(f"[football cache] loaded {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorer entries, {len(errors)} errors")
+    except Exception as e:
+        errors.append(f"FATAL: {e}")
+        print(f"[football cache] FATAL: {e}")
+    finally:
+        _cache_errors = errors
+        _cache_ready  = True
+        print(f"[football cache] done: {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorers, {len(errors)} errors")
 
 
 def _ensure_cache() -> None:
@@ -233,7 +239,7 @@ def test_api():
 
 @football_router.get("/football/all-teams")
 def get_all_teams():
-    _ensure_cache()
+    # Non-blocking: background thread fills _all_teams_flat; return whatever is ready
     return _all_teams_flat
 
 
