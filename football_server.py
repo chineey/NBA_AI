@@ -155,7 +155,7 @@ def _load_global_cache() -> None:
     finally:
         _cache_errors = errors
         _cache_ready  = True
-        print(f"[football cache] done: {len(_all_teams_flat)} teams, {len(_scorers_flat)} scorers, {len(errors)} errors", flush=True)
+        print(f"[football cache] done: {len(_all_teams_flat)} teams, {len(_players_flat)} players, {len(_scorers_flat)} scorers, {len(errors)} errors", flush=True)
 
 
 def _ensure_cache() -> None:
@@ -285,8 +285,9 @@ def get_all_teams():
 def search_players(name: str = Query(..., min_length=2)):
     if not _cache_ready:
         return []
-    q    = name.strip().lower()
-    hits = [p for p in _players_flat if q in p["name"].lower()]
+    q      = name.strip().lower()
+    source = _players_flat if _players_flat else _scorers_flat
+    hits   = [p for p in source if q in p["name"].lower()]
     return hits[:15]
 
 
