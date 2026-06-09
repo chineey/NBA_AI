@@ -973,4 +973,6 @@ Do not use markdown. Do not wrap in code blocks.
     return response.text
 
 
-#uvicorn server:app --reload
+# ── Football routes ───────────────────────────────────────────────────────────
+from football_server import football_router
+app.include_router(football_router)
