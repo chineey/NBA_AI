@@ -436,16 +436,16 @@ def get_player(
 
 # ── AI Predictions ────────────────────────────────────────────────────────────
 class PlayerPredReq(BaseModel):
-    player_id:        int
-    player_name:      str
-    team_id:          int
-    competition_code: str
+    player_id:        int = 99813  # Bukayo Saka
+    player_name:      str = "Bukayo Saka"
+    team_id:          int = 57     # Arsenal
+    competition_code: str = "PL"
 
 
-class TeamPredReq(BaseModel):
-    team_id:          int
-    team_name:        str
-    competition_code: str = ""
+# class TeamPredReq(BaseModel):
+#     team_id:          int
+#     team_name:        str
+#     competition_code: str = ""
 
 
 @football_router.post("/football/predict/player")
@@ -487,72 +487,72 @@ All goal/assist values must be integers. prediction_reasoning: 2-3 sentences. No
     return r.text
 
 
-@football_router.post("/football/predict/team")
-def predict_team(req: TeamPredReq):
-    team    = get_team(req.team_id, competition_code=req.competition_code)
-    matches = team["recentMatches"]
-    season  = team["seasonStats"]
-    if not matches:
-        raise HTTPException(404, "No match data found for this team.")
-
-    last_5 = matches[:5]
-    last_3 = matches[:3]
-    prev_3 = matches[3:6]
-
-    def avg(lst, key):
-        vals = [m[key] for m in lst]
-        return round(sum(vals) / len(vals), 2) if vals else 0.0
-
-    l5_gf    = avg(last_5, "goalsFor"); l5_ga = avg(last_5, "goalsAgainst")
-    trend_gf = round(avg(last_3, "goalsFor")     - avg(prev_3, "goalsFor"),     2) if len(prev_3) >= 3 else 0.0
-    trend_ga = round(avg(last_3, "goalsAgainst") - avg(prev_3, "goalsAgainst"), 2) if len(prev_3) >= 3 else 0.0
-    wins5    = sum(1 for m in last_5 if m["result"] == "W")
-    draws5   = sum(1 for m in last_5 if m["result"] == "D")
-    losses5  = sum(1 for m in last_5 if m["result"] == "L")
-    form     = "".join(m["result"] for m in last_5)
-    last_3_lines = "\n".join([
-        f"  {m['date']} | vs {m['opponent']} ({m['homeAway']}) | {m['result']} {m['score']}"
-        for m in last_3
-    ])
-    next_m   = team.get("nextMatch")
-    next_sec = (
-        f"\n--- NEXT MATCH ---\nDate: {next_m['date']}\nOpponent: {next_m['opponent']}\n"
-        f"Location: {next_m['homeAway']}\nCompetition: {next_m.get('competition','')}\n"
-        if next_m else "\n--- NEXT MATCH ---\nNot available.\n"
-    )
-    pos_str = f"Position: #{season['position']}  |  " if season.get("position") else ""
-
-    prompt = f"""You are an expert football analyst and sports betting predictor.
-
-TEAM: {req.team_name}
-COMPETITION: {req.competition_code}
-
---- FULL SEASON STATS ({season['totalMatches']} matches) ---
-{pos_str}Points: {season.get('points',0)}  |  Record: {season['wins']}W-{season['draws']}D-{season['losses']}L
-Goals scored: {season['goalsFor']}  |  Goals conceded: {season['goalsAgainst']}
-Avg goals scored: {season['avgGoalsFor']}  |  Avg conceded: {season['avgGoalsAgainst']}
-
---- LAST 5 MATCHES ---
-Avg goals: {l5_gf}  |  Avg conceded: {l5_ga}  |  Form: {form}  ({wins5}W-{draws5}D-{losses5}L)
-Goals trend: {'+' if trend_gf>0 else ''}{trend_gf}  |  Conceded trend: {'+' if trend_ga>0 else ''}{trend_ga}
-
---- LAST 3 MATCHES ---
-{last_3_lines}
-{next_sec}
-Return ONLY valid JSON:
-  goals_for_predicted, goals_for_low, goals_for_high,
-  goals_against_predicted, goals_against_low, goals_against_high,
-  clean_sheet_probability,
-  win_probability, draw_probability, loss_probability,
-  prediction_reasoning
-Goal values are integers. Probabilities 0-1 (sum to 1.0). prediction_reasoning: 2-3 sentences. No markdown.
-"""
-    r = gemini.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
-    return r.text
+# @football_router.post("/football/predict/team")
+# def predict_team(req: TeamPredReq):
+#     team    = get_team(req.team_id, competition_code=req.competition_code)
+#     matches = team["recentMatches"]
+#     season  = team["seasonStats"]
+#     if not matches:
+#         raise HTTPException(404, "No match data found for this team.")
+#
+#     last_5 = matches[:5]
+#     last_3 = matches[:3]
+#     prev_3 = matches[3:6]
+#
+#     def avg(lst, key):
+#         vals = [m[key] for m in lst]
+#         return round(sum(vals) / len(vals), 2) if vals else 0.0
+#
+#     l5_gf    = avg(last_5, "goalsFor"); l5_ga = avg(last_5, "goalsAgainst")
+#     trend_gf = round(avg(last_3, "goalsFor")     - avg(prev_3, "goalsFor"),     2) if len(prev_3) >= 3 else 0.0
+#     trend_ga = round(avg(last_3, "goalsAgainst") - avg(prev_3, "goalsAgainst"), 2) if len(prev_3) >= 3 else 0.0
+#     wins5    = sum(1 for m in last_5 if m["result"] == "W")
+#     draws5   = sum(1 for m in last_5 if m["result"] == "D")
+#     losses5  = sum(1 for m in last_5 if m["result"] == "L")
+#     form     = "".join(m["result"] for m in last_5)
+#     last_3_lines = "\n".join([
+#         f"  {m['date']} | vs {m['opponent']} ({m['homeAway']}) | {m['result']} {m['score']}"
+#         for m in last_3
+#     ])
+#     next_m   = team.get("nextMatch")
+#     next_sec = (
+#         f"\n--- NEXT MATCH ---\nDate: {next_m['date']}\nOpponent: {next_m['opponent']}\n"
+#         f"Location: {next_m['homeAway']}\nCompetition: {next_m.get('competition','')}\n"
+#         if next_m else "\n--- NEXT MATCH ---\nNot available.\n"
+#     )
+#     pos_str = f"Position: #{season['position']}  |  " if season.get("position") else ""
+#
+#     prompt = f"""You are an expert football analyst and sports betting predictor.
+#
+# TEAM: {req.team_name}
+# COMPETITION: {req.competition_code}
+#
+# --- FULL SEASON STATS ({season['totalMatches']} matches) ---
+# {pos_str}Points: {season.get('points',0)}  |  Record: {season['wins']}W-{season['draws']}D-{season['losses']}L
+# Goals scored: {season['goalsFor']}  |  Goals conceded: {season['goalsAgainst']}
+# Avg goals scored: {season['avgGoalsFor']}  |  Avg conceded: {season['avgGoalsAgainst']}
+#
+# --- LAST 5 MATCHES ---
+# Avg goals: {l5_gf}  |  Avg conceded: {l5_ga}  |  Form: {form}  ({wins5}W-{draws5}D-{losses5}L)
+# Goals trend: {'+' if trend_gf>0 else ''}{trend_gf}  |  Conceded trend: {'+' if trend_ga>0 else ''}{trend_ga}
+#
+# --- LAST 3 MATCHES ---
+# {last_3_lines}
+# {next_sec}
+# Return ONLY valid JSON:
+#   goals_for_predicted, goals_for_low, goals_for_high,
+#   goals_against_predicted, goals_against_low, goals_against_high,
+#   clean_sheet_probability,
+#   win_probability, draw_probability, loss_probability,
+#   prediction_reasoning
+# Goal values are integers. Probabilities 0-1 (sum to 1.0). prediction_reasoning: 2-3 sentences. No markdown.
+# """
+#     r = gemini.models.generate_content(
+#         model="gemini-2.5-flash",
+#         contents=prompt,
+#         config=types.GenerateContentConfig(response_mime_type="application/json"),
+#     )
+#     return r.text
 
 
 # ── Standalone app (local dev: uvicorn football_server:app --port 8001) ───────
