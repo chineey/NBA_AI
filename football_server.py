@@ -36,8 +36,8 @@ _cache_lock:     Lock       = Lock()
 _cache_ready:    bool       = False
 
 
-def _get(path: str) -> dict:
-    with httpx.Client(timeout=30) as c:
+def _get(path: str, timeout: int = 15) -> dict:
+    with httpx.Client(timeout=timeout) as c:
         r = c.get(f"{FOOTBALL_BASE}{path}", headers=_FBD_HEADERS)
         if r.status_code == 429:
             raise HTTPException(429, "Football API rate limit — wait a moment.")
