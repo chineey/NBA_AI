@@ -215,6 +215,22 @@ def health():
     }
 
 
+@football_router.get("/football/test-api")
+def test_api():
+    """Make one live call to football-data.org and return the result. For debugging only."""
+    try:
+        data = _get("/competitions/PL/teams")
+        teams = data.get("teams", [])
+        return {
+            "ok": True,
+            "team_count": len(teams),
+            "sample": teams[0].get("name") if teams else None,
+            "key": FOOTBALL_KEY[:6] + "..." if FOOTBALL_KEY else "MISSING",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "key": FOOTBALL_KEY[:6] + "..." if FOOTBALL_KEY else "MISSING"}
+
+
 @football_router.get("/football/all-teams")
 def get_all_teams():
     _ensure_cache()
