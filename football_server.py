@@ -31,6 +31,7 @@ TOP5_NAMES = {
 _all_teams_flat: list       = []
 _scorers_by_id:  dict       = {}
 _scorers_flat:   list       = []
+_players_flat:   list       = []  # all squad members (superset of scorers)
 _cache_date:     _date|None = None
 _cache_lock:     Lock       = Lock()
 _cache_ready:    bool       = False
@@ -52,11 +53,13 @@ def _get(path: str, timeout: int = 8) -> dict:
 
 
 def _load_global_cache() -> None:
-    global _all_teams_flat, _scorers_by_id, _scorers_flat, _cache_date, _cache_ready, _cache_errors
+    global _all_teams_flat, _scorers_by_id, _scorers_flat, _players_flat, _cache_date, _cache_ready, _cache_errors
 
     new_teams:    list     = []
     new_scorers:  list     = []
-    seen_team_ids: set[int] = set()
+    new_players:  list     = []
+    seen_team_ids:   set[int] = set()
+    seen_player_ids: set[int] = set()
     errors: list = []
     print(f"[football cache] starting load, key_present={_key_present}", flush=True)
 
@@ -66,16 +69,39 @@ def _load_global_cache() -> None:
             try:
                 td = _get(f"/competitions/{code}/teams")
                 for t in td.get("teams", []):
-                    if t["id"] not in seen_team_ids:
-                        seen_team_ids.add(t["id"])
+                    team_id = t["id"]
+                    team_name  = t.get("shortName") or t.get("name", "")
+                    team_crest = t.get("crest", "")
+                    if team_id not in seen_team_ids:
+                        seen_team_ids.add(team_id)
                         new_teams.append({
-                            "id":          t["id"],
+                            "id":          team_id,
                             "name":        t.get("name", ""),
-                            "shortName":   t.get("shortName") or t.get("name", ""),
+                            "shortName":   team_name,
                             "tla":         t.get("tla", ""),
-                            "crest":       t.get("crest", ""),
+                            "crest":       team_crest,
                             "competition": {"code": code, "name": TOP5_NAMES[code]},
                         })
+                    # Index every squad member for broader player search
+                    for p in t.get("squad", []):
+                        pid = p.get("id")
+                        if pid and pid not in seen_player_ids:
+                            seen_player_ids.add(pid)
+                            new_players.append({
+                                "id":              pid,
+                                "name":            p.get("name", ""),
+                                "position":        p.get("position", ""),
+                                "nationality":     p.get("nationality", ""),
+                                "teamId":          team_id,
+                                "teamName":        team_name,
+                                "teamCrest":       team_crest,
+                                "competitionCode": code,
+                                "competitionName": TOP5_NAMES[code],
+                                "goals":           0,
+                                "assists":         0,
+                                "playedMatches":   0,
+                                "penalties":       None,
+                            })
             except Exception as e:
                 msg = f"teams/{code}: {e}"
                 errors.append(msg)
@@ -107,9 +133,20 @@ def _load_global_cache() -> None:
                 errors.append(msg)
                 print(f"[football cache] {msg}", flush=True)
 
-        _all_teams_flat = sorted(new_teams, key=lambda x: x["name"])
+        scorers_map = {e["id"]: e for e in new_scorers if e["id"]}
+        # Enrich squad players with scorer stats where available
+        for p in new_players:
+            s = scorers_map.get(p["id"])
+            if s:
+                p["goals"]         = s["goals"]
+                p["assists"]       = s["assists"]
+                p["playedMatches"] = s["playedMatches"]
+                p["penalties"]     = s["penalties"]
+
+        _all_teams_flat = sorted(new_teams,   key=lambda x: x["name"])
         _scorers_flat   = new_scorers
-        _scorers_by_id  = {e["id"]: e for e in new_scorers if e["id"]}
+        _scorers_by_id  = scorers_map
+        _players_flat   = new_players
         _cache_date     = _date.today()
 
     except Exception as e:
@@ -215,6 +252,7 @@ def health():
         "status":     "ok",
         "cacheReady": _cache_ready,
         "teams":      len(_all_teams_flat),
+        "players":    len(_players_flat),
         "scorers":    len(_scorers_flat),
         "keyPresent": _key_present,
         "errors":     _cache_errors,
@@ -248,14 +286,8 @@ def search_players(name: str = Query(..., min_length=2)):
     if not _cache_ready:
         return []
     q    = name.strip().lower()
-    hits = [e for e in _scorers_flat if q in e["name"].lower()]
-    seen: set[int] = set()
-    unique = []
-    for h in hits:
-        if h["id"] not in seen:
-            seen.add(h["id"])
-            unique.append(h)
-    return unique[:15]
+    hits = [p for p in _players_flat if q in p["name"].lower()]
+    return hits[:15]
 
 
 @football_router.get("/football/teams/{team_id}")

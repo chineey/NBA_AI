@@ -96,7 +96,7 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
           <div className="flex flex-col items-center justify-center gap-4 py-12 px-4 text-center">
             <Target className="size-10 text-gray-700" />
             <p className="text-gray-500 text-sm">
-              Search top-100 scorers from Premier League, La Liga, Bundesliga, Serie A & Ligue 1
+              Search all squad members from Premier League, La Liga, Bundesliga, Serie A & Ligue 1
             </p>
           </div>
         ) : loading ? (
@@ -106,7 +106,7 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
         ) : notFound ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 px-4 text-center">
             <p className="text-gray-500 text-sm">No players found for "{query}".</p>
-            <p className="text-gray-600 text-xs">Only top-100 scorers per league are indexed. Try common names.</p>
+            <p className="text-gray-600 text-xs">Try searching by last name (e.g. "Saka", "Mbappé").</p>
           </div>
         ) : (
           results.map(r => {
