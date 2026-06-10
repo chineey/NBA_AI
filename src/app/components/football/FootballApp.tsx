@@ -1,178 +1,321 @@
-import { useState } from 'react';
-import { FootballAllTeamsGrid } from './FootballAllTeamsGrid';
-import { FootballPlayerSearch, type PlayerSearchResult } from './FootballPlayerSearch';
-import { FootballTeamView } from './FootballTeamView';
-import { FootballPlayerView } from './FootballPlayerView';
+import { useState, useEffect } from 'react';
+import { Calendar, Trophy, TrendingUp } from 'lucide-react';
 
-type FootballMode = 'players' | 'teams';
-type TeamsView    = 'grid' | 'team' | 'player';
+const FOOTBALL_API = import.meta.env.VITE_FOOTBALL_API_URL ?? 'http://127.0.0.1:8001';
 
-type TeamEntry = {
-  id: number;
-  name: string;
-  shortName: string;
-  tla: string;
-  crest: string;
-  competition: { code: string; name: string };
-};
+interface WCMatch {
+  matchId: number;
+  utcDate: string;
+  date: string;
+  status: string;
+  stage: string;
+  group: string | null;
+  matchday: number | null;
+  homeTeam: { id: number; name: string; shortName: string; crest: string; tla: string };
+  awayTeam: { id: number; name: string; shortName: string; crest: string; tla: string };
+  score: {
+    winner: string | null;
+    fullTime: { home: number | null; away: number | null };
+    halfTime: { home: number | null; away: number | null };
+  };
+  venue: string;
+}
 
-type SquadPlayer = { id: number; name: string; position: string };
+interface StandingEntry {
+  position: number;
+  team: { id: number; name: string; shortName: string; crest: string; tla: string };
+  playedGames: number;
+  won: number;
+  draw: number;
+  lost: number;
+  points: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+}
+
+interface Group {
+  stage: string;
+  group: string | null;
+  table: StandingEntry[];
+}
+
+interface Scorer {
+  rank: number;
+  player: { id: number; name: string; nationality: string; position: string };
+  team: { id: number; name: string; shortName: string; crest: string; tla: string };
+  goals: number;
+  assists: number;
+  penalties: number | null;
+  playedMatches: number;
+}
+
+type FixtureFilter = 'ALL' | 'LIVE' | 'SCHEDULED' | 'FINISHED';
 
 export function FootballApp() {
-  const [mode, setMode] = useState<FootballMode>('players');
+  const [matches, setMatches]   = useState<WCMatch[]>([]);
+  const [groups, setGroups]     = useState<Group[]>([]);
+  const [scorers, setScorers]   = useState<Scorer[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
+  const [fixtureFilter, setFixtureFilter] = useState<FixtureFilter>('ALL');
 
-  // Players mode
-  const [selectedSearchResult, setSelectedSearchResult] = useState<PlayerSearchResult | null>(null);
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      fetch(`${FOOTBALL_API}/football/worldcup/fixtures`).then(r => { if (!r.ok) throw new Error(`Fixtures: ${r.status}`); return r.json(); }),
+      fetch(`${FOOTBALL_API}/football/worldcup/standings`).then(r => { if (!r.ok) throw new Error(`Standings: ${r.status}`); return r.json(); }),
+      fetch(`${FOOTBALL_API}/football/worldcup/scorers?limit=20`).then(r => { if (!r.ok) throw new Error(`Scorers: ${r.status}`); return r.json(); }),
+    ])
+      .then(([fixturesData, standingsData, scorersData]) => {
+        setMatches(fixturesData.matches ?? []);
+        setGroups(standingsData.groups ?? []);
+        setScorers(scorersData.scorers ?? []);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  // Teams mode — teams data lifted here so it persists across grid ↔ team ↔ player navigation
-  const [allTeams, setAllTeams]                   = useState<TeamEntry[]>([]);
-  const [teamsView, setTeamsView]                 = useState<TeamsView>('grid');
-  const [selectedTeam, setSelectedTeam]           = useState<TeamEntry | null>(null);
-  const [selectedSquadPlayer, setSelectedSquadPlayer] = useState<SquadPlayer | null>(null);
+  const filteredMatches = matches.filter(m => {
+    if (fixtureFilter === 'ALL')       return true;
+    if (fixtureFilter === 'LIVE')      return ['IN_PLAY', 'PAUSED', 'LIVE'].includes(m.status);
+    if (fixtureFilter === 'SCHEDULED') return ['SCHEDULED', 'TIMED'].includes(m.status);
+    if (fixtureFilter === 'FINISHED')  return m.status === 'FINISHED';
+    return true;
+  });
 
-  const switchMode = (m: FootballMode) => {
-    setMode(m);
-    if (m === 'teams') {
-      setTeamsView('grid');
-      setSelectedTeam(null);
-      setSelectedSquadPlayer(null);
-    } else {
-      setSelectedSearchResult(null);
-    }
+  const liveCount = matches.filter(m => ['IN_PLAY', 'PAUSED', 'LIVE'].includes(m.status)).length;
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
+        <div className="size-10 border-4 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+        <div className="text-green-400 text-lg animate-pulse font-medium">Loading World Cup data...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-center">
+        <div className="text-5xl">⚽</div>
+        <p className="text-red-400 font-medium">Failed to load data</p>
+        <p className="text-gray-500 text-sm max-w-xs">{error}</p>
+      </div>
+    );
+  }
+
+  const formatMatchTime = (utcDate: string) =>
+    new Date(utcDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  const formatMatchDate = (utcDate: string) =>
+    new Date(utcDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+  const statusBadge = (status: string) => {
+    if (['IN_PLAY', 'PAUSED', 'LIVE'].includes(status))
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 font-medium animate-pulse">LIVE</span>;
+    if (status === 'FINISHED')
+      return <span className="px-2 py-0.5 text-xs rounded-full bg-gray-700 text-gray-400 font-medium">FT</span>;
+    return <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400 font-medium">TBD</span>;
   };
 
-  const handleSelectTeam = (team: TeamEntry) => {
-    setSelectedTeam(team);
-    setSelectedSquadPlayer(null);
-    setTeamsView('team');
-  };
-
-  const handleSelectSquadPlayer = (p: SquadPlayer) => {
-    setSelectedSquadPlayer(p);
-    setTeamsView('player');
-  };
-
-  const backToGrid = () => { setTeamsView('grid'); setSelectedTeam(null); setSelectedSquadPlayer(null); };
-  const backToTeam = () => { setTeamsView('team'); setSelectedSquadPlayer(null); };
-
-  // Build breadcrumbs for teams mode
-  const crumbs: { label: string; onClick: () => void }[] = [];
-  if (teamsView !== 'grid') {
-    crumbs.push({ label: 'All Teams', onClick: backToGrid });
-  }
-  if (selectedTeam && (teamsView === 'team' || teamsView === 'player')) {
-    crumbs.push({ label: selectedTeam.shortName || selectedTeam.name, onClick: backToTeam });
-  }
-  if (selectedSquadPlayer && teamsView === 'player') {
-    crumbs.push({ label: selectedSquadPlayer.name, onClick: () => {} });
-  }
+  const formatGroup = (g: string | null, stage: string) =>
+    g ? g.replace('GROUP_', 'Group ') : stage.replace(/_/g, ' ');
 
   return (
-    <div className="space-y-6">
-      {/* Mode toggle */}
-      <div className="flex items-center gap-1 bg-gray-900 rounded-xl p-1 w-fit border border-gray-800">
-        <button
-          onClick={() => switchMode('players')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'players' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          Players
-        </button>
-        <button
-          onClick={() => switchMode('teams')}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'teams' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          Teams
-        </button>
-      </div>
+    <div className="space-y-10">
 
-      {/* ── Players mode ─────────────────────────────────────────────────── */}
-      {mode === 'players' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Left: search */}
-          <FootballPlayerSearch
-            onSelectPlayer={setSelectedSearchResult}
-            selectedPlayerId={selectedSearchResult?.id ?? null}
-          />
-
-          {/* Right: player view or empty state */}
-          <div className="lg:col-span-2">
-            {selectedSearchResult ? (
-              <FootballPlayerView
-                playerId={selectedSearchResult.id}
-                teamId={selectedSearchResult.teamId}
-                teamName={selectedSearchResult.teamName}
-                competitionCode={selectedSearchResult.competitionCode}
-                initialName={selectedSearchResult.name}
-                initialPosition={selectedSearchResult.position}
-                backLabel="Back to search results"
-                onBack={() => setSelectedSearchResult(null)}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-4 text-center h-[60vh] rounded-xl border border-gray-800 bg-gray-900/40">
-                <div className="text-6xl select-none">⚽</div>
-                <p className="text-gray-300 text-lg font-medium">Find a player</p>
-                <p className="text-gray-500 text-sm max-w-xs">
-                  Search the top scorers from Premier League, La Liga, Bundesliga, Serie A and Ligue 1
-                </p>
-              </div>
-            )}
+      {/* ── Fixtures ─────────────────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="size-5 text-green-400" />
+            <h2 className="text-white text-xl font-semibold">Fixtures</h2>
+            <span className="text-gray-500 text-sm">({matches.length})</span>
+          </div>
+          <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
+            {(['ALL', 'LIVE', 'SCHEDULED', 'FINISHED'] as FixtureFilter[]).map(f => (
+              <button
+                key={f}
+                onClick={() => setFixtureFilter(f)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors relative ${
+                  fixtureFilter === f ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {f === 'LIVE' && liveCount > 0 && (
+                  <span className="absolute -top-1 -right-1 size-2 bg-green-400 rounded-full" />
+                )}
+                {f}
+              </button>
+            ))}
           </div>
         </div>
+
+        {filteredMatches.length === 0 ? (
+          <p className="text-gray-500 text-sm py-8 text-center">No matches for this filter.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredMatches.map(m => (
+              <div key={m.matchId} className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>{formatGroup(m.group, m.stage)}</span>
+                  {statusBadge(m.status)}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
+                    <img
+                      src={m.homeTeam.crest} alt=""
+                      className="size-8 object-contain"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                    <span className="text-white text-xs font-medium text-center truncate w-full">{m.homeTeam.shortName}</span>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-0.5 shrink-0">
+                    {m.status === 'FINISHED' || ['IN_PLAY', 'PAUSED'].includes(m.status) ? (
+                      <span className="text-white text-lg font-bold tabular-nums">
+                        {m.score.fullTime.home ?? 0} – {m.score.fullTime.away ?? 0}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-white text-sm font-semibold">{formatMatchTime(m.utcDate)}</span>
+                        <span className="text-gray-500 text-xs">{formatMatchDate(m.utcDate)}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1 flex-1 min-w-0">
+                    <img
+                      src={m.awayTeam.crest} alt=""
+                      className="size-8 object-contain"
+                      onError={e => (e.currentTarget.style.display = 'none')}
+                    />
+                    <span className="text-white text-xs font-medium text-center truncate w-full">{m.awayTeam.shortName}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Group Standings ──────────────────────────────────────────────── */}
+      {groups.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="size-5 text-green-400" />
+            <h2 className="text-white text-xl font-semibold">Group Standings</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {groups.map((grp, idx) => (
+              <div key={idx} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div className="bg-gray-800/60 px-4 py-2 border-b border-gray-800">
+                  <span className="text-green-400 text-sm font-semibold">{formatGroup(grp.group, grp.stage)}</span>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-gray-800">
+                      <th className="text-left px-3 py-2 font-medium w-5">#</th>
+                      <th className="text-left px-2 py-2 font-medium">Team</th>
+                      <th className="text-center px-1 py-2 font-medium">P</th>
+                      <th className="text-center px-1 py-2 font-medium">W</th>
+                      <th className="text-center px-1 py-2 font-medium">D</th>
+                      <th className="text-center px-1 py-2 font-medium">L</th>
+                      <th className="text-center px-1 py-2 font-medium">GD</th>
+                      <th className="text-center px-1 py-2 font-medium">Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grp.table.map(entry => (
+                      <tr key={entry.team.id} className="border-b border-gray-800/50 last:border-0 hover:bg-gray-800/30 transition-colors">
+                        <td className="px-3 py-2 text-gray-500">{entry.position}</td>
+                        <td className="px-2 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <img
+                              src={entry.team.crest} alt=""
+                              className="size-4 object-contain"
+                              onError={e => (e.currentTarget.style.display = 'none')}
+                            />
+                            <span className="text-white font-medium">{entry.team.tla || entry.team.shortName}</span>
+                          </div>
+                        </td>
+                        <td className="text-center px-1 py-2 text-gray-400">{entry.playedGames}</td>
+                        <td className="text-center px-1 py-2 text-gray-400">{entry.won}</td>
+                        <td className="text-center px-1 py-2 text-gray-400">{entry.draw}</td>
+                        <td className="text-center px-1 py-2 text-gray-400">{entry.lost}</td>
+                        <td className="text-center px-1 py-2 text-gray-400">
+                          {entry.goalDifference > 0 ? `+${entry.goalDifference}` : entry.goalDifference}
+                        </td>
+                        <td className="text-center px-1 py-2 text-white font-semibold">{entry.points}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
-      {/* ── Teams mode ───────────────────────────────────────────────────── */}
-      {mode === 'teams' && (
-        <div>
-          {/* Breadcrumbs */}
-          {crumbs.length > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-500 mb-6">
-              {crumbs.map((c, i) => (
-                <span key={i} className="flex items-center gap-1">
-                  {i > 0 && <span className="text-gray-700">/</span>}
-                  {i < crumbs.length - 1 ? (
-                    <button onClick={c.onClick} className="hover:text-green-400 transition-colors">{c.label}</button>
-                  ) : (
-                    <span className="text-gray-300">{c.label}</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {teamsView === 'grid' && (
-            <FootballAllTeamsGrid
-              teams={allTeams}
-              onTeamsLoaded={setAllTeams}
-              onSelectTeam={handleSelectTeam}
-            />
-          )}
-
-          {teamsView === 'team' && selectedTeam && (
-            <FootballTeamView
-              team={selectedTeam}
-              onSelectPlayer={(p) => handleSelectSquadPlayer(p)}
-              onBack={backToGrid}
-            />
-          )}
-
-          {teamsView === 'player' && selectedSquadPlayer && selectedTeam && (
-            <FootballPlayerView
-              playerId={selectedSquadPlayer.id}
-              teamId={selectedTeam.id}
-              teamName={selectedTeam.name}
-              competitionCode={selectedTeam.competition.code}
-              initialName={selectedSquadPlayer.name}
-              initialPosition={selectedSquadPlayer.position}
-              backLabel={`Back to ${selectedTeam.shortName || selectedTeam.name} squad`}
-              onBack={backToTeam}
-            />
-          )}
-        </div>
+      {/* ── Top Scorers ──────────────────────────────────────────────────── */}
+      {scorers.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="size-5 text-green-400" />
+            <h2 className="text-white text-xl font-semibold">Top Scorers</h2>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 border-b border-gray-800 text-xs">
+                  <th className="text-center px-4 py-3 font-medium w-10">#</th>
+                  <th className="text-left px-4 py-3 font-medium">Player</th>
+                  <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Team</th>
+                  <th className="text-center px-4 py-3 font-medium hidden md:table-cell">Pos</th>
+                  <th className="text-center px-4 py-3 font-medium">MP</th>
+                  <th className="text-center px-4 py-3 font-medium">Goals</th>
+                  <th className="text-center px-4 py-3 font-medium hidden sm:table-cell">Assists</th>
+                  <th className="text-center px-4 py-3 font-medium hidden md:table-cell">Pen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scorers.map(s => (
+                  <tr key={s.player.id} className="border-b border-gray-800/50 last:border-0 hover:bg-gray-800/30 transition-colors">
+                    <td className="text-center px-4 py-3">
+                      <span className={`font-bold ${s.rank <= 3 ? 'text-green-400' : 'text-gray-500'}`}>{s.rank}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-white font-medium">{s.player.name}</div>
+                      <div className="text-gray-500 text-xs">{s.player.nationality}</div>
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={s.team.crest} alt=""
+                          className="size-5 object-contain"
+                          onError={e => (e.currentTarget.style.display = 'none')}
+                        />
+                        <span className="text-gray-300 text-xs">{s.team.shortName}</span>
+                      </div>
+                    </td>
+                    <td className="text-center px-4 py-3 text-gray-400 text-xs hidden md:table-cell">
+                      {s.player.position || '—'}
+                    </td>
+                    <td className="text-center px-4 py-3 text-gray-400">{s.playedMatches}</td>
+                    <td className="text-center px-4 py-3">
+                      <span className="text-white font-bold text-base">{s.goals}</span>
+                    </td>
+                    <td className="text-center px-4 py-3 text-gray-400 hidden sm:table-cell">{s.assists ?? 0}</td>
+                    <td className="text-center px-4 py-3 text-gray-400 hidden md:table-cell">{s.penalties ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
+
     </div>
   );
 }
