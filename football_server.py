@@ -177,6 +177,53 @@ def wc_match(match_id: int):
     return _format_wc_match(_get(f"/matches/{match_id}"))
 
 
+@football_router.get("/football/worldcup/assists")
+def wc_assists(limit: int = Query(default=20, ge=1, le=100)):
+    """Top assist providers, derived from the scorers list sorted by assists."""
+    data = _get(f"/competitions/{WC_CODE}/scorers?limit=100")
+    rows = []
+    for s in data.get("scorers", []):
+        assists = s.get("assists") or 0
+        if assists <= 0:
+            continue
+        p  = s.get("player", {})
+        tm = s.get("team",   {})
+        rows.append({
+            "player": {
+                "id":          p.get("id"),
+                "name":        p.get("name", ""),
+                "nationality": p.get("nationality", ""),
+                "position":    p.get("position") or p.get("section", ""),
+            },
+            "team": {
+                "id":        tm.get("id"),
+                "name":      tm.get("name", ""),
+                "shortName": tm.get("shortName") or tm.get("name", ""),
+                "crest":     tm.get("crest", ""),
+                "tla":       tm.get("tla", ""),
+            },
+            "assists":       assists,
+            "goals":         s.get("goals", 0) or 0,
+            "playedMatches": s.get("playedMatches", 0) or 0,
+        })
+    rows.sort(key=lambda r: (-r["assists"], -r["goals"]))
+    rows = rows[:limit]
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+    return {
+        "competition": data.get("competition", {}),
+        "count":       len(rows),
+        "assists":     rows,
+    }
+
+
+@football_router.get("/football/worldcup/predict/{match_id}")
+def wc_predict(match_id: int):
+    """Full model prediction for a fixture: 1X2, over/under, correct scores."""
+    from football_prediction import predict_match
+    return predict_match(match_id)
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 _allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 

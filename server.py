@@ -23,6 +23,50 @@ app.add_middleware(
 
 client = genai.Client(api_key=os.getenv("GEMINI_API"))
 
+import json as _json
+from nba_model import (
+    opponent_defense_factors, project_stats, detect_next_b2b, to_int_payload,
+)
+
+
+def _clamp_to_model(value, anchor, rel=0.20, abs_min=2.0):
+    """Keep an LLM-refined number within a tight band around the model value."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return anchor
+    band = max(abs(anchor) * rel, abs_min)
+    return max(anchor - band, min(anchor + band, v))
+
+
+def _model_anchored(model_payload: dict, prompt: str, fallback_reasoning: str,
+                    float_keys: tuple = ()) -> dict:
+    """
+    Ask Gemini to refine the model's numbers within ±20% and write reasoning.
+    If Gemini fails or returns junk, the statistical model's numbers stand.
+    """
+    result = dict(model_payload)
+    result["prediction_reasoning"] = fallback_reasoning
+    result["model_baseline"] = dict(model_payload)
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        refined = _json.loads(response.text)
+        for k, anchor in model_payload.items():
+            if k in refined and isinstance(anchor, (int, float)):
+                is_float = k in float_keys
+                clamped = _clamp_to_model(refined[k], float(anchor),
+                                          abs_min=0.05 if is_float else 2.0)
+                result[k] = round(clamped, 3) if is_float else int(round(clamped))
+        if isinstance(refined.get("prediction_reasoning"), str) and refined["prediction_reasoning"].strip():
+            result["prediction_reasoning"] = refined["prediction_reasoning"].strip()
+    except Exception as e:
+        print(f"[predict] Gemini refinement unavailable, using model output: {e}")
+    return result
+
 # ── Supabase client ──────────────────────────────────────────────────────────
 _sb = None
 _sb_url = os.getenv("SUPABASE_URL", "")
@@ -684,11 +728,54 @@ Matchup: {next_game['matchup']}
     else:
         next_game_section = "\n--- NEXT SCHEDULED GAME ---\nNot available.\n"
 
-    prompt = f"""You are an expert NBA analyst and sports betting predictor.
+    # ── Statistical projection (the anchor) ──────────────────────────────
+    opp_abbr   = next_game['opponent'] if next_game else None
+    home_away  = next_game['homeAway'] if next_game else None
+    next_b2b   = detect_next_b2b(all_games, next_game['gameDate'] if next_game else None)
+    def_factors = opponent_defense_factors(nba_data_df)
+    opp_factors = def_factors.get(opp_abbr) if opp_abbr else None
+
+    proj = project_stats(
+        all_games,
+        {"PTS": "pts", "AST": "ast", "REB": "reb",
+         "FG3M": "fg3m", "STL": "stl", "BLK": "blk"},
+        opp_factors, home_away, next_b2b,
+    )
+    model_payload = to_int_payload(
+        proj, {"PTS": "pts", "AST": "ast", "REB": "reb", "FG3M": "fg3m"})
+    model_payload["stl_predicted"] = int(round(proj["STL"]["predicted"]))
+    model_payload["blk_predicted"] = int(round(proj["BLK"]["predicted"]))
+
+    opp_note = ""
+    if opp_factors:
+        opp_note = (f"\n--- OPPONENT DEFENSE ({opp_abbr}) ---\n"
+                    + "  |  ".join(f"{s} allowed: {v:.0%} of league avg"
+                                   for s, v in opp_factors.items()))
+
+    _factors = []
+    if opp_abbr:
+        _factors.append(f"the {opp_abbr} matchup")
+    if next_b2b:
+        _factors.append("a back-to-back")
+    _factors.append("home splits" if home_away == "HOME"
+                    else "away splits" if home_away == "AWAY" else "venue splits")
+    fallback_reasoning = (
+        f"Projection blends weighted form over the last {min(len(all_games), 10)} games "
+        f"(PTS {proj['PTS']['recentAvg']}, AST {proj['AST']['recentAvg']}, REB {proj['REB']['recentAvg']}) "
+        f"with season averages, adjusted for {', '.join(_factors)}. "
+        f"Ranges reflect this player's game-to-game volatility."
+    )
+
+    prompt = f"""You are an expert NBA analyst reviewing a statistical model's projection.
 
 PLAYER: {candidates.iloc[0]['PLAYER_NAME']}
 TEAM: {player_team}
 GAMES IN DATASET: {len(all_games)}
+
+--- STATISTICAL MODEL PROJECTION (your anchor) ---
+{_json.dumps(model_payload)}
+The model already accounts for: weighted recent form, season baseline,
+opponent defensive strength, home/away splits, and back-to-back fatigue.
 
 --- LAST 5 GAMES AVERAGES ---
 PTS: {l5_pts}  |  AST: {l5_ast}  |  REB: {l5_reb}  |  FG3M: {l5_fg3m}
@@ -703,14 +790,15 @@ MIN: {s_min}  |  FG%: {s_fgpct}
 PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(trend_reb)}
 
 --- CURRENT GAME CONTEXT ---
-Last game location: {location}
-Fatigue: {"BACK-TO-BACK — player played yesterday, expect reduced efficiency" if is_b2b else "Normal rest"}
+Fatigue: {"BACK-TO-BACK — expect reduced output" if next_b2b else "Normal rest"}
+{opp_note}
 {next_game_section}
 --- LAST 3 GAMES (most recent first) ---
 {last_3_lines}
 
-Based on all of the above, predict this player's stats for their NEXT game.
-Factor in: hot/cold streaks, fatigue, home vs away splits, the specific opponent, recent form vs season baseline.
+Your job: refine the model projection ONLY where the context gives a clear
+reason (e.g. a strong streak the decay underweights). Stay within ±15% of
+every model value. Then explain the prediction.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,
@@ -720,21 +808,13 @@ Return ONLY a valid JSON object with exactly these keys:
   stl_predicted, blk_predicted,
   prediction_reasoning
 
-All numeric values must be integers (whole numbers, no decimals).
-_low and _high values are your confidence range for that stat.
-prediction_reasoning must be 2-3 sentences explaining the key factors.
+All numeric values must be integers.
+prediction_reasoning must be 2-3 sentences citing the key factors (form,
+opponent defense, rest, location).
 Do not use markdown. Do not wrap in code blocks.
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json"
-        )
-    )
-
-    return response.text
+    return _model_anchored(model_payload, prompt, fallback_reasoning)
 
 def _resolve_team_abbr(name: str) -> str | None:
     name_up = name.strip().upper()
@@ -923,10 +1003,53 @@ Matchup: {next_game['matchup']}
     else:
         next_game_section = "\n--- NEXT SCHEDULED GAME ---\nNot available.\n"
 
-    prompt = f"""You are an expert NBA analyst and sports betting predictor.
+    # ── Statistical projection (the anchor) ──────────────────────────────
+    opp_abbr   = next_game['opponent'] if next_game else None
+    home_away  = next_game['homeAway'] if next_game else None
+    next_b2b   = detect_next_b2b(games, next_game['gameDate'] if next_game else None)
+    def_factors = opponent_defense_factors(nba_data_df)
+    opp_factors = def_factors.get(opp_abbr) if opp_abbr else None
+
+    proj = project_stats(
+        games,
+        {"PTS": "pts", "AST": "ast", "REB": "reb", "FG3M": "fg3m"},
+        opp_factors, home_away, next_b2b,
+    )
+    model_payload = to_int_payload(
+        proj, {"PTS": "pts", "AST": "ast", "REB": "reb", "FG3M": "fg3m"})
+
+    fgpct_recent = tavg(last_5, 'fgPct')
+    model_payload["fgPct_predicted"] = round(
+        0.6 * fgpct_recent + 0.4 * s_fgpct, 3)
+
+    opp_note = ""
+    if opp_factors:
+        opp_note = (f"\n--- OPPONENT DEFENSE ({opp_abbr}) ---\n"
+                    + "  |  ".join(f"{s} allowed: {v:.0%} of league avg"
+                                   for s, v in opp_factors.items()))
+
+    _factors = []
+    if opp_abbr:
+        _factors.append(f"the {opp_abbr} matchup")
+    if next_b2b:
+        _factors.append("a back-to-back")
+    _factors.append("venue splits")
+    fallback_reasoning = (
+        f"Projection blends {full_name}'s weighted form over the last "
+        f"{min(len(games), 10)} games (PTS {proj['PTS']['recentAvg']}) with their season "
+        f"baseline of {s_pts} PTS, adjusted for {', '.join(_factors)}. "
+        f"Ranges reflect game-to-game volatility."
+    )
+
+    prompt = f"""You are an expert NBA analyst reviewing a statistical model's projection.
 
 TEAM: {full_name} ({abbr})
 GAMES IN DATASET: {len(games)}
+
+--- STATISTICAL MODEL PROJECTION (your anchor) ---
+{_json.dumps(model_payload)}
+The model already accounts for: weighted recent form, season baseline,
+opponent defensive strength, home/away splits, and back-to-back fatigue.
 
 --- LAST 5 GAMES AVERAGES ---
 PTS: {l5_pts}  |  AST: {l5_ast}  |  REB: {l5_reb}  |  FG3M: {l5_fg3m} / {l5_fg3a}
@@ -939,15 +1062,15 @@ PTS: {s_pts}  |  AST: {s_ast}  |  REB: {s_reb}  |  FG3M: {s_fg3m}  |  FG%: {s_fg
 --- TRENDS (last 3 vs prior 3 games) ---
 PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(trend_reb)}
 
---- RECENT FORM ---
-Last game location: {location}
-W-L record last 5: {wins}-{5-wins}
+--- CONTEXT ---
+Fatigue: {"BACK-TO-BACK" if next_b2b else "Normal rest"}
+{opp_note}
 {next_game_section}
 --- LAST 3 GAMES (most recent first, score shown as US-OPP) ---
 {last_3_lines}
 
-Based on all of the above, predict this TEAM's stats for their NEXT game.
-Factor in: hot/cold streaks, home vs away, the specific opponent, recent form vs season baseline, offensive/defensive trends.
+Your job: refine the model projection ONLY where the context gives a clear
+reason. Stay within ±15% of every model value. Then explain the prediction.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,
@@ -957,20 +1080,13 @@ Return ONLY a valid JSON object with exactly these keys:
   fgPct_predicted,
   prediction_reasoning
 
-pts_predicted, pts_low, pts_high, ast_predicted, ast_low, ast_high, reb_predicted, reb_low, reb_high, fg3m_predicted, fg3m_low, fg3m_high must all be integers (whole numbers, no decimals).
-fgPct_predicted is a decimal between 0 and 1 (e.g. 0.478).
-_low and _high values are your confidence range for that stat.
-prediction_reasoning must be 2-3 sentences explaining the key factors.
+pts/ast/reb/fg3m values must all be integers. fgPct_predicted is a decimal
+between 0 and 1 (e.g. 0.478). prediction_reasoning must be 2-3 sentences.
 Do not use markdown. Do not wrap in code blocks.
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json")
-    )
-
-    return response.text
+    return _model_anchored(model_payload, prompt, fallback_reasoning,
+                           float_keys=("fgPct_predicted",))
 
 
 # ── Football routes ───────────────────────────────────────────────────────────
