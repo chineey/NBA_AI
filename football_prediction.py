@@ -51,6 +51,36 @@ CTX_FACTOR_MIN = 0.80
 CTX_FACTOR_MAX = 1.20
 CTX_TTL        = 3600   # re-research a fixture at most once an hour
 
+# ── Elo strength priors ───────────────────────────────────────────────────────
+# The free football-data tier has no national-team matches outside the World
+# Cup itself, so before a team's first tournament game there is no form data
+# at all. These approximate Elo ratings (eloratings.net family, mid-2020s
+# snapshot) give every team a realistic starting strength; the Bayesian
+# shrinkage in _team_strength blends real results in on top as they happen,
+# so the priors fade with every match played.
+ELO_PRIORS = {
+    "ESP": 2150, "ARG": 2140, "FRA": 2030, "POR": 1990, "ENG": 1980,
+    "BRA": 1970, "NED": 1940, "GER": 1930, "COL": 1920, "URY": 1890,
+    "JPN": 1880, "ECU": 1880, "CRO": 1870, "MEX": 1850, "BEL": 1850,
+    "MAR": 1850, "NOR": 1850, "AUT": 1830, "SUI": 1810, "IRN": 1800,
+    "TUR": 1800, "USA": 1790, "PAR": 1780, "SEN": 1760, "CAN": 1750,
+    "SWE": 1750, "KOR": 1740, "CZE": 1740, "CIV": 1730, "EGY": 1720,
+    "ALG": 1710, "AUS": 1700, "TUN": 1700, "SCO": 1690, "BIH": 1660,
+    "PAN": 1650, "RSA": 1650, "GHA": 1640, "UZB": 1640, "COD": 1640,
+    "KSA": 1630, "QAT": 1620, "JOR": 1620, "IRQ": 1600, "NZL": 1590,
+    "CPV": 1560, "CUW": 1540, "HAI": 1500,
+}
+ELO_DEFAULT = 1600
+ELO_SCALE   = 380   # ~1 goal of expected margin per ~250-300 Elo points
+_ELO_MEAN   = sum(ELO_PRIORS.values()) / len(ELO_PRIORS)
+
+
+def _elo_prior(tla: str | None) -> tuple[float, float, int]:
+    """(prior_attack, prior_defense, elo) for a team, relative to the WC field."""
+    elo = ELO_PRIORS.get((tla or "").upper(), ELO_DEFAULT)
+    factor = math.exp((elo - _ELO_MEAN) / ELO_SCALE)
+    return math.sqrt(factor), 1.0 / math.sqrt(factor), elo
+
 # ── Team form cache (football-data free tier allows ~10 req/min) ─────────────
 _form_cache: dict[int, tuple[float, list[dict]]] = {}
 _FORM_TTL = 6 * 3600  # 6 hours
@@ -86,13 +116,16 @@ def _fetch_team_matches(team_id: int) -> list[dict]:
 
 
 # ── Strength estimation ───────────────────────────────────────────────────────
-def _team_strength(team_id: int, before_iso: str | None = None) -> dict:
+def _team_strength(team_id: int, tla: str | None = None,
+                   before_iso: str | None = None) -> dict:
     """
-    Estimate attack/defense strength from recent finished matches.
+    Estimate attack/defense strength from recent finished matches, shrunk
+    toward an Elo-based prior (not neutral 1.0) when the sample is small.
 
     attack  > 1.0  → scores more than the baseline team
     defense < 1.0  → concedes less than the baseline team
     """
+    prior_attack, prior_defense, elo = _elo_prior(tla)
     matches = _fetch_team_matches(team_id)
 
     rows = []
@@ -123,8 +156,10 @@ def _team_strength(team_id: int, before_iso: str | None = None) -> dict:
 
     if not rows:
         return {
-            "attack": 1.0, "defense": 1.0, "matches": 0,
-            "avgScored": BASELINE_GOALS, "avgConceded": BASELINE_GOALS,
+            "attack": round(prior_attack, 3), "defense": round(prior_defense, 3),
+            "matches": 0, "elo": elo,
+            "avgScored": round(BASELINE_GOALS * prior_attack, 2),
+            "avgConceded": round(BASELINE_GOALS * prior_defense, 2),
             "form": "", "recent": [],
         }
 
@@ -138,16 +173,17 @@ def _team_strength(team_id: int, before_iso: str | None = None) -> dict:
     avg_scored   = s_sum / w_sum
     avg_conceded = c_sum / w_sum
 
-    # Shrink toward neutral (1.0) when sample is small
+    # Shrink toward the Elo prior when the sample is small
     n = len(rows)
     trust = n / (n + SHRINK_K)
-    attack  = 1.0 + trust * (avg_scored / BASELINE_GOALS - 1.0)
-    defense = 1.0 + trust * (avg_conceded / BASELINE_GOALS - 1.0)
+    attack  = prior_attack  + trust * (avg_scored / BASELINE_GOALS - prior_attack)
+    defense = prior_defense + trust * (avg_conceded / BASELINE_GOALS - prior_defense)
 
     return {
         "attack":      round(attack, 3),
         "defense":     round(defense, 3),
         "matches":     n,
+        "elo":         elo,
         "avgScored":   round(avg_scored, 2),
         "avgConceded": round(avg_conceded, 2),
         "form":        "".join(r["result"] for r in rows[:5]),
@@ -257,8 +293,8 @@ def _reasoning(home: dict, away: dict, hs: dict, as_: dict,
 
     def team_line(team: dict, s: dict) -> str:
         if s["matches"] == 0:
-            return (f"{team['shortName']} have no covered recent matches yet, "
-                    f"so they start at the international baseline")
+            return (f"{team['shortName']} have not played a covered match yet, so the model "
+                    f"starts from their historical strength rating (Elo {s.get('elo', '—')})")
         return (f"{team['shortName']} average {s['avgScored']} scored / {s['avgConceded']} "
                 f"conceded over their last {s['matches']} matches (form: {s['form']})")
 
@@ -342,8 +378,8 @@ def predict_match(match_id: int) -> dict:
 
     # For finished matches, only use form from before kickoff (no leakage).
     before = utc_date if finished else None
-    hs  = _team_strength(home["id"], before_iso=before)
-    as_ = _team_strength(away["id"], before_iso=before)
+    hs  = _team_strength(home["id"], tla=home.get("tla"), before_iso=before)
+    as_ = _team_strength(away["id"], tla=away.get("tla"), before_iso=before)
 
     lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * HOME_ADV
     lam_a = BASELINE_GOALS * as_["attack"] * hs["defense"]
@@ -381,7 +417,7 @@ def predict_match(match_id: int) -> dict:
             {"home": ft.get("home"), "away": ft.get("away")} if finished else None
         ),
         "model": {
-            "type": "Time-decayed Poisson (Dixon-Coles adjusted)"
+            "type": "Time-decayed Poisson with Elo priors (Dixon-Coles adjusted)"
                     + (" + grounded news adjustment" if context else ""),
             "expectedGoals": {"home": round(lam_h, 2), "away": round(lam_a, 2)},
             "homeForm": hs,
