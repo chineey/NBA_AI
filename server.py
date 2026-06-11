@@ -245,30 +245,42 @@ def _current_season() -> str:
     return f"{start_year}-{str(start_year + 1)[2:]}"
 
 
-_schedule_cache: pd.DataFrame | None = None
+def _next_season() -> str:
+    """Season after the current one, e.g. '2026-27'. Its schedule appears once fixtures are announced."""
+    today = _date.today()
+    start_year = today.year + 1 if today.month >= 10 else today.year
+    return f"{start_year}-{str(start_year + 1)[2:]}"
+
+
+_schedule_cache: dict[str, pd.DataFrame] = {}
 _schedule_cache_day: str | None = None
 
 
-def _fetch_schedule() -> pd.DataFrame | None:
-    """Fetch full-season schedule via LeagueSchedule; refreshes once per day."""
+def _fetch_schedule(season: str) -> pd.DataFrame | None:
+    """Fetch a season's full schedule via ScheduleLeagueV2; refreshes once per day."""
     global _schedule_cache, _schedule_cache_day
     today_str = _date.today().isoformat()
-    if _schedule_cache is not None and _schedule_cache_day == today_str:
-        return _schedule_cache
-    try:
-        from nba_api.stats.endpoints import LeagueSchedule
-        time.sleep(1)
-        sched = LeagueSchedule(league_id='00', season_year=_current_season(), headers=_NBA_HEADERS)
-        df = sched.get_data_frames()[0]
-        # Normalise to lowercase so column detection is case-insensitive
-        df.columns = [c.lower() for c in df.columns]
-        print(f"Schedule fetched: {len(df)} games. Columns: {df.columns.tolist()[:10]}")
-        _schedule_cache = df
+    if _schedule_cache_day != today_str:
+        _schedule_cache = {}
         _schedule_cache_day = today_str
-        return df
-    except Exception as e:
-        print(f"LeagueSchedule fetch failed: {e}")
-        return None
+    if season in _schedule_cache:
+        return _schedule_cache[season]
+    from nba_api.stats.endpoints import ScheduleLeagueV2
+    # Default headers first — the custom Host/keep-alive set resets connections
+    # on this endpoint locally — then the browser-like set for cloud hosts.
+    for headers in (None, _NBA_HEADERS):
+        try:
+            time.sleep(1)
+            sched = ScheduleLeagueV2(league_id='00', season=season, headers=headers, timeout=60)
+            df = sched.get_data_frames()[0]
+            # Normalise to lowercase so column detection is case-insensitive
+            df.columns = [c.lower() for c in df.columns]
+            print(f"Schedule fetched for {season}: {len(df)} games. Columns: {df.columns.tolist()[:10]}")
+            _schedule_cache[season] = df
+            return df
+        except Exception as e:
+            print(f"ScheduleLeagueV2 fetch failed for {season} (headers={'custom' if headers else 'default'}): {e}")
+    return None
 
 
 def _parse_dates(series: pd.Series) -> pd.Series:
@@ -281,7 +293,7 @@ def _parse_dates(series: pd.Series) -> pd.Series:
 def get_next_game(team_abbr: str) -> dict | None:
     # ── 1. Try the live scoreboard first (covers today's games) ──────────────
     try:
-        from nba_api.live.endpoints import scoreboard as live_sb
+        from nba_api.live.nba.endpoints import scoreboard as live_sb
         board = live_sb.ScoreBoard()
         games = board.get_dict().get('scoreboard', {}).get('games', [])
         today_str = _date.today().isoformat()
@@ -302,8 +314,18 @@ def get_next_game(team_abbr: str) -> dict | None:
     except Exception as e:
         print(f"Live scoreboard lookup failed: {e}")
 
-    # ── 2. Fall back to full-season schedule ─────────────────────────────────
-    df = _fetch_schedule()
+    # ── 2. Fall back to season schedules: current season, then next season ───
+    # The next-season lookup makes upcoming games appear as soon as the NBA
+    # announces fixtures (preseason rows show up in ScheduleLeagueV2 by August).
+    for season in (_current_season(), _next_season()):
+        game = _next_game_from_schedule(team_abbr, season)
+        if game:
+            return game
+    return None
+
+
+def _next_game_from_schedule(team_abbr: str, season: str) -> dict | None:
+    df = _fetch_schedule(season)
     if df is None:
         return None
     try:
@@ -337,7 +359,7 @@ def get_next_game(team_abbr: str) -> dict | None:
 
         row = future.iloc[0]
         is_home = row[home_col] == team_abbr
-        opponent = str(row[away_col] if is_home else row[home_col])
+        opponent = str(row[away_col] if is_home else row[home_col]).strip() or "TBD"
         game_date = row['_date'].strftime('%Y-%m-%d')
 
         return {
@@ -347,7 +369,7 @@ def get_next_game(team_abbr: str) -> dict | None:
             "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",
         }
     except Exception as e:
-        print(f"Next game lookup failed for {team_abbr}: {e}")
+        print(f"Next game lookup failed for {team_abbr} ({season}): {e}")
         return None
 
 ABBR_TO_FULL = {
