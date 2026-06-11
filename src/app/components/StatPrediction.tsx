@@ -1,4 +1,4 @@
-import { Trophy, Sparkles, Loader2, History } from 'lucide-react';
+import { Trophy, Sparkles, Loader2, History, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { PlayerPhoto } from './PlayerPhoto';
 import { NextGameBadge, PredStatCard, ReasoningCard, type NextGame } from './PredictionShared';
@@ -77,6 +77,7 @@ export function StatPrediction({ player }: StatPredictionProps) {
     'Click "Generate AI Prediction" to analyze recent games and predict the next performance.'
   );
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [playerStatus, setPlayerStatus] = useState<string | null>(null);
 
   const generatePrediction = async () => {
     setLoading(true);
@@ -109,6 +110,7 @@ export function StatPrediction({ player }: StatPredictionProps) {
         blk_predicted: p.blk_predicted ?? 0,
       });
       setPredictionReason(p.prediction_reasoning ?? 'No reasoning provided.');
+      setPlayerStatus(p.player_status ?? null);
       setHasGenerated(true);
     } catch (error) {
       console.error('Prediction Error:', error);
@@ -246,6 +248,18 @@ export function StatPrediction({ player }: StatPredictionProps) {
           </button>
         </div>
         <div className="p-5">
+          {playerStatus && (
+            <div className={`mb-4 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm animate-fade-in ${
+              playerStatus === 'OUT'
+                ? 'bg-red-500/10 border-red-500/25 text-red-300'
+                : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+            }`}>
+              <AlertTriangle className="size-4 shrink-0" />
+              {playerStatus === 'OUT'
+                ? 'Latest news lists this player as OUT for the next game — projection assumes he plays.'
+                : 'Latest news lists this player as QUESTIONABLE for the next game — projection assumes he plays.'}
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <PredStatCard label="PTS"  predicted={prediction.pts_predicted}  low={prediction.pts_low}  high={prediction.pts_high}  revealed={hasGenerated} index={0} />
             <PredStatCard label="AST"  predicted={prediction.ast_predicted}  low={prediction.ast_low}  high={prediction.ast_high}  revealed={hasGenerated} index={1} />

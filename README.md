@@ -22,7 +22,7 @@ Predictions are anchored by a statistical model (`nba_model.py`), not LLM guessw
 4. Back-to-back fatigue discount
 5. Prediction intervals from the player's own game-to-game volatility
 
-Gemini then refines the numbers within a strict ±20% clamp and writes the reasoning. If Gemini is unavailable, the model's numbers are returned directly — the endpoint never fails because of the LLM.
+Before refinement, a Google-Search-grounded Gemini call (`gemini_context.py`) researches what the game logs cannot show: injury report status, minutes restrictions, role changes, and key opponent absences. The findings are injected into the refinement prompt with an **evidence-gated clamp**: Gemini may move numbers ±15% on judgement alone, and up to ±30% only when it cites a concrete, dated news item. If the news lists the player as OUT or QUESTIONABLE, the response carries a `player_status` flag the UI surfaces as a warning banner (the projection itself stays conditional on him playing). If Gemini is unavailable, the model's numbers are returned directly — the endpoint never fails because of the LLM.
 
 ### Football (World Cup)
 

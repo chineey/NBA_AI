@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import HTTPException
 
+from gemini_context import grounded_research, clamp
+
 FOOTBALL_BASE = "https://api.football-data.org/v4"
 
 # ── Model constants ───────────────────────────────────────────────────────────
@@ -41,6 +43,13 @@ MAX_GOALS      = 10     # score matrix dimension (0..10 goals each side)
 LAMBDA_MIN     = 0.20
 LAMBDA_MAX     = 4.50
 FORM_MATCHES   = 20     # how many finished matches to pull per team
+
+# Bounds on the news-based xG adjustment. ±20% on expected goals already
+# swings 1X2 by ~8-10 points — enough to absorb a missing star striker
+# without ever letting the LLM overrule the statistical model.
+CTX_FACTOR_MIN = 0.80
+CTX_FACTOR_MAX = 1.20
+CTX_TTL        = 3600   # re-research a fixture at most once an hour
 
 # ── Team form cache (football-data free tier allows ~10 req/min) ─────────────
 _form_cache: dict[int, tuple[float, list[dict]]] = {}
@@ -258,6 +267,62 @@ def _reasoning(home: dict, away: dict, hs: dict, as_: dict,
     )
 
 
+# ── Grounded news context (Gemini + Google Search) ───────────────────────────
+def _fixture_context(match_id: int, home: dict, away: dict, utc_date: str) -> dict | None:
+    """
+    Research the fixture for what form data cannot show: confirmed injuries
+    and suspensions, squad rotation (e.g. already qualified), press-conference
+    hints, and tournament psychology.
+
+    Gemini does NOT predict the match. It returns two expected-goals factors
+    (1.0 = no effect) that are hard-clamped before they touch the Poisson
+    model, so all market probabilities stay internally consistent.
+    """
+    h, a = home.get("name", ""), away.get("name", "")
+    prompt = f"""Use Google Search to research the upcoming football match
+{h} vs {a} (FIFA World Cup, kickoff {utc_date[:16]} UTC).
+
+Look ONLY for factual, recent news a statistics model cannot see:
+- confirmed injuries, suspensions, or late fitness doubts for key players
+- squad rotation / B-team plans (e.g. a side that has already qualified)
+- manager press-conference hints about lineup or formation changes
+- relevant tournament psychology or notable head-to-head history
+
+Do NOT judge general form or quality — a statistical model already covers
+that. If you find nothing concrete and recent, both factors must be 1.0.
+
+Then output a JSON object (no other JSON in your reply):
+{{
+  "home_xg_factor": <number {CTX_FACTOR_MIN}-{CTX_FACTOR_MAX}, 1.0 = no news effect on {h}'s expected goals>,
+  "away_xg_factor": <number {CTX_FACTOR_MIN}-{CTX_FACTOR_MAX}, 1.0 = no news effect on {a}'s expected goals>,
+  "key_factors": [<up to 4 short strings, each one concrete finding with its date>],
+  "summary": "<1-2 sentences for fans; empty string if nothing found>"
+}}
+
+Calibration guide: a missing starter ≈ 0.95; the team's main striker or
+playmaker ruled out ≈ 0.85-0.90; confirmed B-squad / heavy rotation ≈ 0.80.
+Only move a factor when a search result supports it."""
+
+    raw = grounded_research(prompt, cache_key=f"foot:{match_id}", ttl=CTX_TTL)
+    if not raw:
+        return None
+
+    home_f = clamp(raw.get("home_xg_factor"), CTX_FACTOR_MIN, CTX_FACTOR_MAX, 1.0)
+    away_f = clamp(raw.get("away_xg_factor"), CTX_FACTOR_MIN, CTX_FACTOR_MAX, 1.0)
+    key_factors = [str(k) for k in raw.get("key_factors", []) if str(k).strip()][:4]
+    summary = str(raw.get("summary", "")).strip()
+
+    if home_f == 1.0 and away_f == 1.0 and not summary:
+        return None
+    return {
+        "homeXgFactor": round(home_f, 3),
+        "awayXgFactor": round(away_f, 3),
+        "keyFactors": key_factors,
+        "summary": summary,
+        "source": "Gemini + Google Search",
+    }
+
+
 # ── Public entry point ────────────────────────────────────────────────────────
 def predict_match(match_id: int) -> dict:
     match = _get(f"/matches/{match_id}")
@@ -277,6 +342,14 @@ def predict_match(match_id: int) -> dict:
 
     lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * HOME_ADV
     lam_a = BASELINE_GOALS * as_["attack"] * hs["defense"]
+
+    # Grounded news adjustment — only for matches still to be played, so a
+    # finished match is always predicted blind (Gemini would know the result).
+    context = None if finished else _fixture_context(match_id, home, away, utc_date)
+    if context:
+        lam_h *= context["homeXgFactor"]
+        lam_a *= context["awayXgFactor"]
+
     lam_h = min(max(lam_h, LAMBDA_MIN), LAMBDA_MAX)
     lam_a = min(max(lam_a, LAMBDA_MIN), LAMBDA_MAX)
 
@@ -303,16 +376,19 @@ def predict_match(match_id: int) -> dict:
             {"home": ft.get("home"), "away": ft.get("away")} if finished else None
         ),
         "model": {
-            "type": "Time-decayed Poisson (Dixon-Coles adjusted)",
+            "type": "Time-decayed Poisson (Dixon-Coles adjusted)"
+                    + (" + grounded news adjustment" if context else ""),
             "expectedGoals": {"home": round(lam_h, 2), "away": round(lam_a, 2)},
             "homeForm": hs,
             "awayForm": as_,
+            "contextAdjustment": context,
         },
         "prediction": {
             "outcome": markets,
             "predictedScore": {"home": top[0]["home"], "away": top[0]["away"]},
             "correctScores": top,
-            "reasoning": _reasoning(home, away, hs, as_, lam_h, lam_a, markets, top[0]),
+            "reasoning": _reasoning(home, away, hs, as_, lam_h, lam_a, markets, top[0])
+                         + (f" News check: {context['summary']}" if context and context["summary"] else ""),
         },
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "disclaimer": (

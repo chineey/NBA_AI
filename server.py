@@ -27,9 +27,16 @@ import json as _json
 from nba_model import (
     opponent_defense_factors, project_stats, detect_next_b2b, to_int_payload,
 )
+from gemini_context import grounded_research
+
+# Gemini refinement bands around the statistical model's numbers:
+# ±15% on judgement alone; ±30% only when grounded news backs the move.
+REFINE_REL_DEFAULT = 0.15
+REFINE_REL_NEWS    = 0.30
+NEWS_TTL           = 1800  # re-research a player/team at most every 30 min
 
 
-def _clamp_to_model(value, anchor, rel=0.20, abs_min=2.0):
+def _clamp_to_model(value, anchor, rel, abs_min=2.0):
     """Keep an LLM-refined number within a tight band around the model value."""
     try:
         v = float(value)
@@ -40,10 +47,14 @@ def _clamp_to_model(value, anchor, rel=0.20, abs_min=2.0):
 
 
 def _model_anchored(model_payload: dict, prompt: str, fallback_reasoning: str,
-                    float_keys: tuple = ()) -> dict:
+                    float_keys: tuple = (), allow_wide: bool = False) -> dict:
     """
-    Ask Gemini to refine the model's numbers within ±20% and write reasoning.
-    If Gemini fails or returns junk, the statistical model's numbers stand.
+    Ask Gemini to refine the model's numbers and write reasoning.
+
+    The clamp is evidence-gated: ±15% by default, widened to ±30% only when
+    grounded news research flagged something concrete (allow_wide) AND the
+    refinement itself claims to act on that news (news_adjusted). If Gemini
+    fails or returns junk, the statistical model's numbers stand.
     """
     result = dict(model_payload)
     result["prediction_reasoning"] = fallback_reasoning
@@ -55,10 +66,12 @@ def _model_anchored(model_payload: dict, prompt: str, fallback_reasoning: str,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
         refined = _json.loads(response.text)
+        rel = REFINE_REL_NEWS if (allow_wide and refined.get("news_adjusted") is True) \
+              else REFINE_REL_DEFAULT
         for k, anchor in model_payload.items():
             if k in refined and isinstance(anchor, (int, float)):
                 is_float = k in float_keys
-                clamped = _clamp_to_model(refined[k], float(anchor),
+                clamped = _clamp_to_model(refined[k], float(anchor), rel,
                                           abs_min=0.05 if is_float else 2.0)
                 result[k] = round(clamped, 3) if is_float else int(round(clamped))
         if isinstance(refined.get("prediction_reasoning"), str) and refined["prediction_reasoning"].strip():
@@ -66,6 +79,56 @@ def _model_anchored(model_payload: dict, prompt: str, fallback_reasoning: str,
     except Exception as e:
         print(f"[predict] Gemini refinement unavailable, using model output: {e}")
     return result
+
+
+def _player_news(player_name: str, team_full: str, next_game: dict | None) -> dict | None:
+    """Grounded search for availability/role news the game logs cannot show."""
+    game_line = (f"Their next game: {next_game['matchup']} on {next_game['gameDate']}."
+                 if next_game else "Their next game is not yet scheduled.")
+    prompt = f"""Use Google Search for the latest NBA news (past 7 days) about
+{player_name} of the {team_full}. {game_line}
+
+Look ONLY for factual items a box-score model cannot see:
+- injury report status for the next game (OUT / QUESTIONABLE / PROBABLE / ACTIVE)
+- minutes restriction, load management, or planned rest
+- role or rotation changes (new starter, bench role, usage shift)
+- key OPPONENT absences that change this specific matchup
+
+Then output a JSON object (no other JSON in your reply):
+{{
+  "player_status": "ACTIVE" | "QUESTIONABLE" | "OUT" | "UNKNOWN",
+  "noteworthy": <true only if you found a concrete, dated item above>,
+  "brief": "<2-4 factual sentences with dates; empty string if nothing found>"
+}}"""
+    key = f"nba:{player_name}:{next_game['gameDate'] if next_game else 'na'}"
+    return grounded_research(prompt, cache_key=key, ttl=NEWS_TTL)
+
+
+def _team_news(team_full: str, next_game: dict | None) -> dict | None:
+    """Grounded search for roster news affecting a team's next game."""
+    game_line = (f"Their next game: {next_game['matchup']} on {next_game['gameDate']}."
+                 if next_game else "Their next game is not yet scheduled.")
+    prompt = f"""Use Google Search for the latest NBA news (past 7 days) about
+the {team_full}. {game_line}
+
+Look ONLY for factual items a box-score model cannot see:
+- key players ruled out, questionable, or returning from injury
+- suspensions or planned rest nights
+- key OPPONENT absences that change this specific matchup
+
+Then output a JSON object (no other JSON in your reply):
+{{
+  "noteworthy": <true only if you found a concrete, dated item above>,
+  "brief": "<2-4 factual sentences with dates; empty string if nothing found>"
+}}"""
+    key = f"nbateam:{team_full}:{next_game['gameDate'] if next_game else 'na'}"
+    return grounded_research(prompt, cache_key=key, ttl=NEWS_TTL)
+
+
+def _news_section(ctx: dict | None) -> str:
+    brief = (ctx or {}).get("brief", "")
+    return (f"\n--- LATEST NEWS (Google Search; may be incomplete) ---\n"
+            f"{brief.strip() or 'No recent news found.'}\n")
 
 # ── Supabase client ──────────────────────────────────────────────────────────
 _sb = None
@@ -788,6 +851,13 @@ Matchup: {next_game['matchup']}
         f"Ranges reflect this player's game-to-game volatility."
     )
 
+    # ── Grounded news research (availability, minutes, matchup absences) ──
+    news_ctx = _player_news(
+        str(candidates.iloc[0]['PLAYER_NAME']),
+        ABBR_TO_FULL.get(player_team, player_team),
+        next_game,
+    )
+
     prompt = f"""You are an expert NBA analyst reviewing a statistical model's projection.
 
 PLAYER: {candidates.iloc[0]['PLAYER_NAME']}
@@ -814,13 +884,19 @@ PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(
 --- CURRENT GAME CONTEXT ---
 Fatigue: {"BACK-TO-BACK — expect reduced output" if next_b2b else "Normal rest"}
 {opp_note}
-{next_game_section}
+{next_game_section}{_news_section(news_ctx)}
 --- LAST 3 GAMES (most recent first) ---
 {last_3_lines}
 
 Your job: refine the model projection ONLY where the context gives a clear
 reason (e.g. a strong streak the decay underweights). Stay within ±15% of
-every model value. Then explain the prediction.
+every model value — except when the LATEST NEWS section reports a concrete,
+dated factor (injury status, minutes restriction, role change, key opponent
+absence): then you may move the affected stats up to ±30%, must set
+"news_adjusted" to true, and must cite that news in your reasoning.
+If the news says the player is OUT or QUESTIONABLE for the next game, keep
+the numbers as an "if he plays" projection but open the reasoning with his
+status. Then explain the prediction.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,
@@ -828,15 +904,23 @@ Return ONLY a valid JSON object with exactly these keys:
   reb_predicted, reb_low, reb_high,
   fg3m_predicted, fg3m_low, fg3m_high,
   stl_predicted, blk_predicted,
+  news_adjusted,
   prediction_reasoning
 
-All numeric values must be integers.
+All stat values must be integers. news_adjusted must be a boolean.
 prediction_reasoning must be 2-3 sentences citing the key factors (form,
-opponent defense, rest, location).
+opponent defense, rest, location, news).
 Do not use markdown. Do not wrap in code blocks.
 """
 
-    return _model_anchored(model_payload, prompt, fallback_reasoning)
+    result = _model_anchored(
+        model_payload, prompt, fallback_reasoning,
+        allow_wide=bool(news_ctx and news_ctx.get("noteworthy")),
+    )
+    status = (news_ctx or {}).get("player_status")
+    if status in ("OUT", "QUESTIONABLE"):
+        result["player_status"] = status
+    return result
 
 def _resolve_team_abbr(name: str) -> str | None:
     name_up = name.strip().upper()
@@ -1063,6 +1147,9 @@ Matchup: {next_game['matchup']}
         f"Ranges reflect game-to-game volatility."
     )
 
+    # ── Grounded news research (rotation, injuries on either side) ───────
+    news_ctx = _team_news(full_name, next_game)
+
     prompt = f"""You are an expert NBA analyst reviewing a statistical model's projection.
 
 TEAM: {full_name} ({abbr})
@@ -1087,12 +1174,16 @@ PTS trend: {fmt(trend_pts)}  |  AST trend: {fmt(trend_ast)}  |  REB trend: {fmt(
 --- CONTEXT ---
 Fatigue: {"BACK-TO-BACK" if next_b2b else "Normal rest"}
 {opp_note}
-{next_game_section}
+{next_game_section}{_news_section(news_ctx)}
 --- LAST 3 GAMES (most recent first, score shown as US-OPP) ---
 {last_3_lines}
 
 Your job: refine the model projection ONLY where the context gives a clear
-reason. Stay within ±15% of every model value. Then explain the prediction.
+reason. Stay within ±15% of every model value — except when the LATEST NEWS
+section reports a concrete, dated factor (key player out or returning,
+suspension, rest night): then you may move the affected stats up to ±30%,
+must set "news_adjusted" to true, and must cite that news in your reasoning.
+Then explain the prediction.
 
 Return ONLY a valid JSON object with exactly these keys:
   pts_predicted, pts_low, pts_high,
@@ -1100,15 +1191,18 @@ Return ONLY a valid JSON object with exactly these keys:
   reb_predicted, reb_low, reb_high,
   fg3m_predicted, fg3m_low, fg3m_high,
   fgPct_predicted,
+  news_adjusted,
   prediction_reasoning
 
 pts/ast/reb/fg3m values must all be integers. fgPct_predicted is a decimal
-between 0 and 1 (e.g. 0.478). prediction_reasoning must be 2-3 sentences.
+between 0 and 1 (e.g. 0.478). news_adjusted must be a boolean.
+prediction_reasoning must be 2-3 sentences.
 Do not use markdown. Do not wrap in code blocks.
 """
 
     return _model_anchored(model_payload, prompt, fallback_reasoning,
-                           float_keys=("fgPct_predicted",))
+                           float_keys=("fgPct_predicted",),
+                           allow_wide=bool(news_ctx and news_ctx.get("noteworthy")))
 
 
 # ── Football routes ───────────────────────────────────────────────────────────
