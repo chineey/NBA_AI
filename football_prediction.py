@@ -255,11 +255,16 @@ def _reasoning(home: dict, away: dict, hs: dict, as_: dict,
         else "a tight, low-scoring game"
     )
 
+    def team_line(team: dict, s: dict) -> str:
+        if s["matches"] == 0:
+            return (f"{team['shortName']} have no covered recent matches yet, "
+                    f"so they start at the international baseline")
+        return (f"{team['shortName']} average {s['avgScored']} scored / {s['avgConceded']} "
+                f"conceded over their last {s['matches']} matches (form: {s['form']})")
+
     return (
-        f"{home['shortName']} average {hs['avgScored']} scored / {hs['avgConceded']} conceded "
-        f"over their last {hs['matches']} matches (form: {hs['form'] or 'n/a'}); "
-        f"{away['shortName']} average {as_['avgScored']} scored / {as_['avgConceded']} conceded "
-        f"(form: {as_['form'] or 'n/a'}). "
+        f"{team_line(home, hs)}; "
+        f"{team_line(away, as_)}. "
         f"The model expects {lam_h:.2f} goals for {home['shortName']} and {lam_a:.2f} "
         f"for {away['shortName']}, pointing to {goals_note}. "
         f"Most likely outcome: {verdict} ({verdict_p:.0%}), "

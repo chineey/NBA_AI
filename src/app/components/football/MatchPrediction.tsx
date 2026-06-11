@@ -41,8 +41,28 @@ interface PredictionData {
 
 const pct = (p: number) => `${Math.round(p * 100)}%`;
 
+function TeamCrest({ team }: { team: TeamInfo }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [team.id]);
+  if (!team.crest || failed) {
+    return (
+      <div className="size-12 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center">
+        <span className="text-gray-300 text-xs font-bold tracking-wide">{team.tla || team.shortName.slice(0, 3).toUpperCase()}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={team.crest}
+      alt={team.shortName}
+      className="size-12 object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function FormBadges({ form }: { form: string }) {
-  if (!form) return <span className="text-gray-600 text-xs">no data</span>;
+  if (!form) return null;
   return (
     <div className="flex gap-1">
       {form.split('').map((r, i) => (
@@ -86,11 +106,11 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex p-3 sm:p-6 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-2xl my-6 overflow-hidden"
+        className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-2xl m-auto overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -124,8 +144,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
             {/* Teams + predicted score */}
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
-                <img src={data.homeTeam.crest} alt="" className="size-12 object-contain"
-                     onError={e => (e.currentTarget.style.display = 'none')} />
+                <TeamCrest team={data.homeTeam} />
                 <span className="text-white text-sm font-medium text-center">{data.homeTeam.shortName}</span>
                 <FormBadges form={data.model.homeForm.form} />
               </div>
@@ -146,8 +165,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
               </div>
 
               <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
-                <img src={data.awayTeam.crest} alt="" className="size-12 object-contain"
-                     onError={e => (e.currentTarget.style.display = 'none')} />
+                <TeamCrest team={data.awayTeam} />
                 <span className="text-white text-sm font-medium text-center">{data.awayTeam.shortName}</span>
                 <FormBadges form={data.model.awayForm.form} />
               </div>
