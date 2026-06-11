@@ -13,6 +13,8 @@ Replaces "ask the LLM to guess a number" with a real model:
 
 Gemini is then used only to sanity-check within tight bounds and write the
 reasoning — and if Gemini is down, the model's numbers stand on their own.
+
+
 """
 
 from __future__ import annotations
