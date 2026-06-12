@@ -1,7 +1,8 @@
 """
 Football match prediction engine.
 
-Model: time-decayed Poisson with Dixon-Coles low-score correction.
+Model: time-decayed Poisson with Dixon-Coles low-score correction,
+anchored on Elo strength priors (trained offline by football_train.py).
 
 For each team we estimate attack and defense strength from its recent
 finished matches (exponentially decayed so recent form counts more),
@@ -21,6 +22,7 @@ It produces calibrated probabilities, not certainties.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import time
@@ -36,7 +38,12 @@ FOOTBALL_BASE = "https://api.football-data.org/v4"
 # ── Model constants ───────────────────────────────────────────────────────────
 BASELINE_GOALS = 1.30   # avg goals per team per match in international football
 DECAY          = 0.90   # per-match exponential decay on form weighting
-SHRINK_K       = 5.0    # Bayesian shrinkage: strength pulled to 1.0 when n is small
+SHRINK_K       = 50.0   # form trust: 20 games -> ~29% weight on observed form vs the
+                        # Elo prior — backtest-tuned (K=5 scored 0.929 logloss, K=50
+                        # 0.884 on 4,570 held-out internationals)
+H2H_N          = 3      # head-to-head: last N meetings between the two sides
+H2H_SHRINK     = 30.0   # ...blended lightly: 3 meetings -> ~9% influence (backtest-tuned)
+H2H_TTL        = 24 * 3600
 HOME_ADV       = 1.06   # mild edge for the listed home side (WC venues are near-neutral)
 DC_RHO         = -0.10  # Dixon-Coles low-score dependence parameter
 MAX_GOALS      = 10     # score matrix dimension (0..10 goals each side)
@@ -72,6 +79,30 @@ ELO_PRIORS = {
 }
 ELO_DEFAULT = 1600
 ELO_SCALE   = 380   # ~1 goal of expected margin per ~250-300 Elo points
+
+# Hosts get a real home advantage; every other WC fixture is neutral-venue.
+HOST_TLAS = {"USA", "MEX", "CAN"}
+
+# Prefer ratings + constants trained offline (football_train.py) when present.
+_ELO_TRAINED = False
+try:
+    with open(os.path.join(os.path.dirname(__file__), "elo_ratings.json"),
+              encoding="utf-8") as _f:
+        _elo_file = json.load(_f)
+    ELO_PRIORS = {k: float(v) for k, v in _elo_file["ratings"].items()}
+    _c = _elo_file.get("constants", {})
+    BASELINE_GOALS = float(_c.get("baseline", BASELINE_GOALS))
+    ELO_SCALE      = float(_c.get("scale", ELO_SCALE))
+    _HOME_ELO      = float(_c.get("home_elo", 100.0))
+    DC_RHO         = float(_c.get("rho", DC_RHO))
+    HOME_ADV       = math.exp(_HOME_ELO / (2 * ELO_SCALE))
+    _ELO_TRAINED   = True
+    print(f"[football] Loaded trained Elo ratings ({_elo_file.get('generated')}) "
+          f"and tuned constants from elo_ratings.json")
+except Exception:
+    pass  # hardcoded snapshot above stays in effect
+
+ELO_DEFAULT = min(ELO_PRIORS.values())  # unknown team ≈ weakest in field
 _ELO_MEAN   = sum(ELO_PRIORS.values()) / len(ELO_PRIORS)
 
 
@@ -79,7 +110,7 @@ def _elo_prior(tla: str | None) -> tuple[float, float, int]:
     """(prior_attack, prior_defense, elo) for a team, relative to the WC field."""
     elo = ELO_PRIORS.get((tla or "").upper(), ELO_DEFAULT)
     factor = math.exp((elo - _ELO_MEAN) / ELO_SCALE)
-    return math.sqrt(factor), 1.0 / math.sqrt(factor), elo
+    return math.sqrt(factor), 1.0 / math.sqrt(factor), int(elo)
 
 # ── Team form cache (football-data free tier allows ~10 req/min) ─────────────
 _form_cache: dict[int, tuple[float, list[dict]]] = {}
@@ -308,6 +339,88 @@ def _reasoning(home: dict, away: dict, hs: dict, as_: dict,
     )
 
 
+# ── Head-to-head adjustment (last 3 meetings, lightly weighted) ──────────────
+_h2h_cache: dict[int, tuple[float, dict | None]] = {}
+
+# Full historical H2H exported by football_train.py (the free API tier only
+# covers meetings inside competitions it tracks, which is almost none).
+try:
+    with open(os.path.join(os.path.dirname(__file__), "h2h_history.json"),
+              encoding="utf-8") as _f:
+        _H2H_HISTORY: dict[str, list] = json.load(_f)
+except Exception:
+    _H2H_HISTORY = {}
+
+
+def _h2h_factors(match_id: int, home_id: int, home_tla: str | None,
+                 away_tla: str | None, before_iso: str | None) -> dict | None:
+    """
+    Multiplicative xG factors from the last H2H_N meetings between the sides.
+
+    Backtest on 2022+ internationals: light blending (~9% at 3 meetings)
+    improves 1X2 log loss from 0.8842 to 0.8820; heavier weighting hurts.
+    Merges the trainer-exported history with the live head2head endpoint
+    (which adds tournament rematches after the export date). Fails soft.
+    """
+    now = time.time()
+    hit = _h2h_cache.get(match_id)
+    if hit and now - hit[0] < H2H_TTL:
+        return hit[1]
+
+    rows: list[dict] = []
+
+    # 1. Local history (oriented to the alphabetically-first TLA)
+    if home_tla and away_tla:
+        first, second = sorted((home_tla.upper(), away_tla.upper()))
+        for m in _H2H_HISTORY.get(f"{first}|{second}", []):
+            scored, conceded = ((m["scored"], m["conceded"])
+                                if home_tla.upper() == first
+                                else (m["conceded"], m["scored"]))
+            rows.append({"date": m["date"], "scored": scored, "conceded": conceded})
+
+    # 2. Live endpoint — picks up meetings newer than the exported file
+    try:
+        data = _get(f"/matches/{match_id}/head2head?limit=10")
+        for m in data.get("matches", []):
+            ft_score = (m.get("score") or {}).get("fullTime") or {}
+            hg, ag = ft_score.get("home"), ft_score.get("away")
+            if hg is None or ag is None:
+                continue
+            is_home = (m.get("homeTeam") or {}).get("id") == home_id
+            rows.append({
+                "date": (m.get("utcDate") or "")[:10],
+                "scored": int(hg if is_home else ag),
+                "conceded": int(ag if is_home else hg),
+            })
+    except Exception as e:
+        print(f"H2H endpoint failed for match {match_id}: {e}")
+
+    if before_iso:
+        rows = [r for r in rows if r["date"] < before_iso[:10]]  # no leakage
+    dedup = {r["date"]: r for r in rows}
+    rows = sorted(dedup.values(), key=lambda r: r["date"], reverse=True)[:H2H_N]
+
+    result = None
+    if rows:
+        w_sum = s_sum = c_sum = 0.0
+        for i, r in enumerate(rows):
+            w = DECAY ** i
+            w_sum += w
+            s_sum += w * r["scored"]
+            c_sum += w * r["conceded"]
+        att = (s_sum / w_sum) / BASELINE_GOALS
+        con = (c_sum / w_sum) / BASELINE_GOALS
+        t = len(rows) / (len(rows) + H2H_SHRINK)
+        result = {
+            "homeFactor": round(min(max(1.0 + t * (att - 1.0), 0.80), 1.25), 3),
+            "awayFactor": round(min(max(1.0 + t * (con - 1.0), 0.80), 1.25), 3),
+            "meetings": [f"{r['date']}: {r['scored']}-{r['conceded']}" for r in rows],
+        }
+
+    _h2h_cache[match_id] = (now, result)
+    return result
+
+
 # ── Grounded news context (Gemini + Google Search) ───────────────────────────
 def _fixture_context(match_id: int, home: dict, away: dict, utc_date: str) -> dict | None:
     """
@@ -381,8 +494,18 @@ def predict_match(match_id: int) -> dict:
     hs  = _team_strength(home["id"], tla=home.get("tla"), before_iso=before)
     as_ = _team_strength(away["id"], tla=away.get("tla"), before_iso=before)
 
-    lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * HOME_ADV
+    # Real home advantage only for host nations — every other WC fixture is
+    # neutral-venue, so the listed "home" side gets no boost.
+    home_adv = HOME_ADV if (home.get("tla") or "").upper() in HOST_TLAS else 1.0
+    lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * home_adv
     lam_a = BASELINE_GOALS * as_["attack"] * hs["defense"]
+
+    # Light head-to-head nudge from the last few meetings between the sides
+    h2h = _h2h_factors(match_id, home["id"], home.get("tla"), away.get("tla"),
+                       before_iso=utc_date if finished else None)
+    if h2h:
+        lam_h *= h2h["homeFactor"]
+        lam_a *= h2h["awayFactor"]
 
     # Grounded news adjustment — only for matches still to be played, so a
     # finished match is always predicted blind (Gemini would know the result).
@@ -422,6 +545,7 @@ def predict_match(match_id: int) -> dict:
             "expectedGoals": {"home": round(lam_h, 2), "away": round(lam_a, 2)},
             "homeForm": hs,
             "awayForm": as_,
+            "headToHead": h2h,
             "contextAdjustment": context,
         },
         "prediction": {

@@ -7,3 +7,4 @@ __pycache__
 .env.production
 .env.development
 docs
+international_results.csv

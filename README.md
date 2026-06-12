@@ -42,6 +42,8 @@ Endpoints:
 
 For finished matches, only form from before kickoff is used (no data leakage). Team form is cached for 6 hours to respect the football-data.org free-tier rate limit. Clicking any fixture card in the UI opens the prediction modal.
 
+**Elo priors and training.** The free data tier has no national-team matches outside the World Cup itself, so each team starts from an Elo strength prior instead of a neutral baseline; observed tournament results blend in on top via Bayesian shrinkage (form trust backtest-tuned to ~29% at 20 games — heavier trust scored worse because raw goal counts ignore opponent strength), plus a light last-3 head-to-head adjustment (~9% influence; stronger H2H weighting hurt the backtest). `football_train.py` recomputes everything offline from the [martj42 international results dataset](https://github.com/martj42/international_results) (~49k matches since 1872): it derives current Elo ratings for all 48 teams, tunes the model constants by grid search on pre-2022 data, backtests on 2022+ (4,570 matches incl. WC 2022; tuned model 0.8755 1X2 log loss vs 1.0986 uniform — also beating an XGBoost comparison at 0.8823), and writes `elo_ratings.json` + `h2h_history.json`, which the live model loads at startup. Re-run it after each international window to refresh.
+
 ## Running locally
 
 ```bash
