@@ -51,10 +51,13 @@ def current_season_label() -> str:
     return f"{start}-{str(start + 1)[2:]}"
 
 
-def load_from_supabase(sb) -> pd.DataFrame:
-    rows, page, size = [], 0, 1000
+def load_from_supabase_metadata(sb) -> tuple[pd.DataFrame, set[str]]:
+    """
+    Fetch only game_date and player_name columns to optimize loading speed.
+    """
+    rows, page, size = [], 0, 2000
     while True:
-        resp = sb.table('nba_player_game_logs').select('*').range(
+        resp = sb.table('nba_player_game_logs').select('game_date,player_name').range(
             page * size, (page + 1) * size - 1
         ).execute()
         batch = resp.data
@@ -65,17 +68,10 @@ def load_from_supabase(sb) -> pd.DataFrame:
             break
         page += 1
     if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame(rows)
-
-
-def is_nba_api_data(df) -> bool:
-    """NBA API game IDs are 10-digit strings starting with '00'."""
-    if df.empty:
-        return False
-    col = 'game_id' if 'game_id' in df.columns else 'GAME_ID'
-    sample = str(df[col].iloc[0])
-    return len(sample) == 10 and sample.startswith('00')
+        return pd.DataFrame(), set()
+    df = pd.DataFrame(rows)
+    player_names = set(df['player_name'].dropna().unique())
+    return df, player_names
 
 
 def parse_minutes(val) -> float:
@@ -228,7 +224,7 @@ def fetch_date_range(session, start: date, end: date) -> list:
     return all_rows
 
 
-def update_player_profiles(sb, game_log_df, new_rows):
+def update_player_profiles(sb, existing_player_names, new_rows):
     """
     For all unique players in the game logs, resolve their official NBA ID,
     fetch their profile from CommonPlayerInfo, and upsert to Supabase.
@@ -239,10 +235,7 @@ def update_player_profiles(sb, game_log_df, new_rows):
     import pandas as pd
 
     # Get all unique player names
-    player_names = set()
-    if not game_log_df.empty:
-        col = 'player_name' if 'player_name' in game_log_df.columns else 'PLAYER_NAME'
-        player_names.update(game_log_df[col].dropna().unique().tolist())
+    player_names = set(existing_player_names)
     for r in new_rows:
         player_names.add(r['player_name'])
 
@@ -339,6 +332,81 @@ def update_player_profiles(sb, game_log_df, new_rows):
                 print(f"    Upsert batch failed: {e}")
 
 
+def update_team_rosters(sb):
+    """
+    Fetch official rosters for all 30 teams from CommonTeamRoster and upsert to Supabase.
+    """
+    from nba_api.stats.endpoints import CommonTeamRoster
+    import time
+
+    print("Syncing official team rosters to Supabase...")
+    _NBA_HEADERS = {
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Host': 'stats.nba.com',
+        'Origin': 'https://www.nba.com',
+        'Referer': 'https://www.nba.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+    }
+
+    TEAMS = [
+        'ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW',
+        'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK',
+        'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS'
+    ]
+
+    TEAM_IDS = {
+        'ATL': 1610612737, 'BOS': 1610612738, 'CLE': 1610612739, 'NOP': 1610612740,
+        'CHI': 1610612741, 'DAL': 1610612742, 'DEN': 1610612743, 'GSW': 1610612744,
+        'HOU': 1610612745, 'LAC': 1610612746, 'LAL': 1610612747, 'MIA': 1610612748,
+        'MIL': 1610612749, 'MIN': 1610612750, 'BKN': 1610612751, 'NYK': 1610612752,
+        'ORL': 1610612753, 'IND': 1610612754, 'PHI': 1610612755, 'PHX': 1610612756,
+        'POR': 1610612757, 'SAC': 1610612758, 'SAS': 1610612759, 'OKC': 1610612760,
+        'TOR': 1610612761, 'UTA': 1610612762, 'MEM': 1610612763, 'WAS': 1610612764,
+        'DET': 1610612765, 'CHA': 1610612766
+    }
+
+    roster_rows = []
+    for abbr in TEAMS:
+        team_id = TEAM_IDS[abbr]
+        print(f"  Fetching roster for {abbr}...")
+        df_roster = None
+        for headers in (None, _NBA_HEADERS):
+            try:
+                time.sleep(0.6)  # Safe rate limit delay
+                info = CommonTeamRoster(team_id=team_id, season=current_season_label(), headers=headers, timeout=3)
+                df_roster = info.get_data_frames()[0]
+                break
+            except Exception as e:
+                print(f"    Attempt failed for {abbr} (headers={'custom' if headers else 'default'}): {e}")
+
+        if df_roster is not None and not df_roster.empty:
+            for _, row in df_roster.iterrows():
+                roster_rows.append({
+                    "team_abbr": abbr,
+                    "player_id": int(row.get("PLAYER_ID", 0)),
+                    "player_name": str(row.get("PLAYER", "")),
+                    "jersey": str(row.get("NUM", "")).strip(),
+                    "position": str(row.get("POSITION", "")).strip(),
+                    "height": str(row.get("HEIGHT", "")).strip(),
+                    "weight": str(row.get("WEIGHT", "")).strip(),
+                })
+        else:
+            print(f"    Failed to fetch roster for {abbr} completely.")
+
+    if roster_rows:
+        print(f"Upserting {len(roster_rows)} roster players to Supabase...")
+        for i in range(0, len(roster_rows), 100):
+            batch = roster_rows[i:i+100]
+            try:
+                sb.table('nba_team_rosters').upsert(batch).execute()
+            except Exception as e:
+                print(f"    Upsert roster batch failed: {e}")
+
+
 def run():
     sb_url = os.getenv("SUPABASE_URL", "")
     sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
@@ -355,15 +423,28 @@ def run():
 
     print(f"Season: {current_season_label()}")
     print("Loading current data from Supabase...")
-    df = load_from_supabase(sb)
+    
+    # Optimize startup: fetch metadata only
+    df, existing_player_names = load_from_supabase_metadata(sb)
     print(f"Current rows in Supabase: {len(df)}")
 
     today = date.today()
 
-    if is_nba_api_data(df):
+    # Check for NBA API data inside Supabase via lightweight limit(1) query
+    is_nba_api = False
+    try:
+        resp = sb.table('nba_player_game_logs').select('game_id').limit(1).execute()
+        if resp.data:
+            sample = str(resp.data[0]['game_id'])
+            is_nba_api = len(sample) == 10 and sample.startswith('00')
+    except Exception:
+        pass
+
+    if is_nba_api:
         print("Detected NBA API data — clearing Supabase and re-seeding from ESPN...")
         sb.table('nba_player_game_logs').delete().neq('player_id', 0).execute()
         df = pd.DataFrame()
+        existing_player_names = set()
 
     if df.empty:
         start = current_season_start()
@@ -376,9 +457,15 @@ def run():
 
     # Upsert profiles for new/all players
     try:
-        update_player_profiles(sb, df, rows)
+        update_player_profiles(sb, existing_player_names, rows)
     except Exception as pe:
         print(f"Failed to update player profiles: {pe}")
+
+    # Upsert official team rosters
+    try:
+        update_team_rosters(sb)
+    except Exception as re:
+        print(f"Failed to update team rosters: {re}")
 
     if not rows:
         print("No new games found.")

@@ -204,6 +204,36 @@ def _load_profiles_from_supabase():
 _load_profiles_from_supabase()
 
 
+_nba_rosters_dict = {}
+
+def _load_rosters_from_supabase():
+    global _nba_rosters_dict
+    try:
+        if _sb_url and _sb:
+            print("Loading team rosters from Supabase...")
+            resp = _sb.table('nba_team_rosters').select('*').execute()
+            
+            temp_rosters = {}
+            for row in resp.data:
+                abbr = str(row['team_abbr']).upper()
+                if abbr not in temp_rosters:
+                    temp_rosters[abbr] = []
+                temp_rosters[abbr].append({
+                    "id": int(row['player_id']),
+                    "name": str(row['player_name']),
+                    "number": str(row.get('jersey', '') or '').strip(),
+                    "position": str(row.get('position', '') or '').strip(),
+                    "height": str(row.get('height', '') or '').strip(),
+                    "weight": str(row.get('weight', '') or '').strip(),
+                })
+            _nba_rosters_dict = temp_rosters
+            print(f"Loaded {len(_nba_rosters_dict)} team rosters from Supabase.")
+    except Exception as e:
+        print(f"Failed to load team rosters from Supabase: {e}")
+
+_load_rosters_from_supabase()
+
+
 def _refresh_player_data():
     """Fetch new games from NBA API, upsert to Supabase, reload in-memory dataframe."""
     global nba_data_df, HAS_TOV, _schedule_cache, _schedule_cache_day
@@ -553,7 +583,8 @@ def reload_data():
     nba_data_df = _load_from_supabase()
     HAS_TOV = 'TOV' in nba_data_df.columns
     _load_profiles_from_supabase()
-    return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict)}
+    _load_rosters_from_supabase()
+    return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict), "rosters": len(_nba_rosters_dict)}
 
 
 @app.get("/teams")
@@ -577,84 +608,19 @@ def get_team_roster(abbr: str):
     if not team_id:
         raise HTTPException(status_code=404, detail="Team not found")
 
-    # Try roster cache first
-    roster_cache = _load_roster_cache()
-    if abbr in roster_cache:
-        # Update player profile cache with any height/weight details we have!
-        try:
-            profile_cache = _load_profile_cache()
-            updated = False
-            for player in roster_cache[abbr].get("players", []):
-                p_id_str = str(player["id"])
-                if p_id_str not in profile_cache and player.get("position"):
-                    profile_cache[p_id_str] = {
-                        "height": player.get("height", ""),
-                        "weight": player.get("weight", ""),
-                        "position": player.get("position", ""),
-                        "jersey": player.get("number", ""),
-                        "age": None,
-                        "experience": "",
-                    }
-                    updated = True
-            if updated:
-                _save_profile_cache(profile_cache)
-        except Exception:
-            pass
-        return roster_cache[abbr]
-
-    try:
-        from nba_api.stats.endpoints import CommonTeamRoster
-        df = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
-
-        players = []
-        for _, row in df.iterrows():
-            players.append({
-                "id": int(row.get("PLAYER_ID", 0)),
-                "name": str(row.get("PLAYER", "")),
-                "number": str(row.get("NUM", "")).strip(),
-                "position": str(row.get("POSITION", "")).strip(),
-                "height": str(row.get("HEIGHT", "")).strip(),
-                "weight": str(row.get("WEIGHT", "")).strip(),
-            })
-
-        result = {
+    # 1. Try local memory database cache first (official rosters synced from Supabase)
+    if abbr in _nba_rosters_dict:
+        return {
             "abbr": abbr,
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
-            "players": players,
+            "players": _nba_rosters_dict[abbr],
         }
-        
-        # Save to cache
-        roster_cache[abbr] = result
-        _save_roster_cache(roster_cache)
-        
-        # Warm player profile cache too
-        try:
-            profile_cache = _load_profile_cache()
-            for p in players:
-                p_id_str = str(p["id"])
-                if p_id_str not in profile_cache:
-                    profile_cache[p_id_str] = {
-                        "height": p["height"],
-                        "weight": p["weight"],
-                        "position": p["position"],
-                        "jersey": p["number"],
-                        "age": None,
-                        "experience": "",
-                    }
-            _save_profile_cache(profile_cache)
-        except Exception:
-            pass
-            
-        return result
 
-    except Exception as e:
-        print(f"Roster fetch failed for {abbr}: {e}")
-        # Fallback: derive roster from CSV/database data
-        team_df = nba_data_df[nba_data_df['TEAM_ABBREVIATION'] == abbr]
-        if team_df.empty:
-            raise HTTPException(status_code=404, detail="No data found for team")
+    # 2. Try deriving roster from game logs in memory as fallback
+    team_df = nba_data_df[nba_data_df['TEAM_ABBREVIATION'] == abbr]
+    if not team_df.empty:
         unique = team_df.drop_duplicates(subset=['PLAYER_ID'])
         
         from nba_api.stats.static import players as static_players
@@ -663,8 +629,7 @@ def get_team_roster(abbr: str):
         for _, row in unique.iterrows():
             p_name = str(row['PLAYER_NAME'])
             p_id = int(row['PLAYER_ID'])
-            # Try to resolve official NBA player ID offline using player name.
-            # This fixes photo/headshot issues when database uses ESPN player IDs.
+            
             try:
                 matches = static_players.find_players_by_full_name(p_name)
                 if matches:
@@ -672,7 +637,6 @@ def get_team_roster(abbr: str):
             except Exception:
                 pass
 
-            # Resolve profile details from memory or cache fallback
             height = ""
             weight = ""
             position = ""
@@ -698,6 +662,7 @@ def get_team_roster(abbr: str):
                 "height": height,
                 "weight": weight,
             })
+            
         return {
             "abbr": abbr,
             "name": ABBR_TO_FULL.get(abbr, abbr),
@@ -705,6 +670,35 @@ def get_team_roster(abbr: str):
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
             "players": players,
         }
+
+    # 3. Fallback: If no database data is available, fetch from live NBA API
+    print(f"No database records found for {abbr}, calling stats.nba.com API...")
+    try:
+        from nba_api.stats.endpoints import CommonTeamRoster
+        df = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
+
+        players = []
+        for _, row in df.iterrows():
+            players.append({
+                "id": int(row.get("PLAYER_ID", 0)),
+                "name": str(row.get("PLAYER", "")),
+                "number": str(row.get("NUM", "")).strip(),
+                "position": str(row.get("POSITION", "")).strip(),
+                "height": str(row.get("HEIGHT", "")).strip(),
+                "weight": str(row.get("WEIGHT", "")).strip(),
+            })
+
+        return {
+            "abbr": abbr,
+            "name": ABBR_TO_FULL.get(abbr, abbr),
+            "teamId": team_id,
+            "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
+            "players": players,
+        }
+
+    except Exception as e:
+        print(f"Roster fetch failed for {abbr}: {e}")
+        raise HTTPException(status_code=404, detail=f"No roster data available for {abbr}")
 
 _TEAM_SEARCH = {
     "atlanta hawks": "ATL", "hawks": "ATL",
