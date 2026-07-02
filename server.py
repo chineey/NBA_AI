@@ -544,22 +544,33 @@ def get_team_roster(abbr: str):
 
     except Exception as e:
         print(f"Roster fetch failed for {abbr}: {e}")
-        # Fallback: derive roster from CSV data
+        # Fallback: derive roster from CSV/database data
         team_df = nba_data_df[nba_data_df['TEAM_ABBREVIATION'] == abbr]
         if team_df.empty:
             raise HTTPException(status_code=404, detail="No data found for team")
         unique = team_df.drop_duplicates(subset=['PLAYER_ID'])
-        players = [
-            {
-                "id": int(row['PLAYER_ID']),
-                "name": str(row['PLAYER_NAME']),
+        
+        from nba_api.stats.static import players as static_players
+        players = []
+        for _, row in unique.iterrows():
+            p_name = str(row['PLAYER_NAME'])
+            p_id = int(row['PLAYER_ID'])
+            # Try to resolve official NBA player ID offline using player name.
+            # This fixes photo/headshot issues when database uses ESPN player IDs.
+            try:
+                matches = static_players.find_players_by_full_name(p_name)
+                if matches:
+                    p_id = int(matches[0]['id'])
+            except Exception:
+                pass
+            players.append({
+                "id": p_id,
+                "name": p_name,
                 "number": "",
                 "position": "",
                 "height": "",
                 "weight": "",
-            }
-            for _, row in unique.iterrows()
-        ]
+            })
         return {
             "abbr": abbr,
             "name": ABBR_TO_FULL.get(abbr, abbr),
@@ -637,8 +648,8 @@ def get_player_stats(name: str):
         if candidates.empty:
             raise HTTPException(status_code=404, detail="Player not found")
 
-        player_id = int(candidates.iloc[0]["PLAYER_ID"])
-        nba_players = nba_data_df[nba_data_df['PLAYER_ID'] == player_id].copy()
+        db_player_id = int(candidates.iloc[0]["PLAYER_ID"])
+        nba_players = nba_data_df[nba_data_df['PLAYER_ID'] == db_player_id].copy()
         nba_players['GAME_DATE'] = pd.to_datetime(nba_players['GAME_DATE'])
         nba_players = nba_players.sort_values(by='GAME_DATE', ascending=False)
         nba_players = nba_players.drop_duplicates(subset=['GAME_ID'], keep='first')
@@ -655,12 +666,25 @@ def get_player_stats(name: str):
         team_abbr = str(nba_players.iloc[0]["TEAM_ABBREVIATION"])
         next_game = get_next_game(team_abbr)
 
+        player_name_str = str(nba_players.iloc[0]["PLAYER_NAME"])
+
+        # Resolve official NBA API player_id offline for external APIs / photo IDs.
+        # This fixes mismatches when Supabase uses ESPN player IDs.
+        official_player_id = db_player_id
+        try:
+            from nba_api.stats.static import players as static_players
+            matches = static_players.find_players_by_full_name(player_name_str)
+            if matches:
+                official_player_id = int(matches[0]['id'])
+        except Exception:
+            pass
+
         # Fetch real player profile via nba_api
         profile: dict = {}
         try:
             from nba_api.stats.endpoints import CommonPlayerInfo
             from datetime import date
-            df_info = _call_nba_api(CommonPlayerInfo, player_id=player_id)
+            df_info = _call_nba_api(CommonPlayerInfo, player_id=official_player_id)
             pi = df_info.iloc[0]
             age = None
             try:
@@ -678,7 +702,7 @@ def get_player_stats(name: str):
                 "experience": str(pi.get('SEASON_EXP', '')).strip(),
             }
         except Exception as pe:
-            print(f"CommonPlayerInfo failed for {player_id}: {pe}")
+            print(f"CommonPlayerInfo failed for {official_player_id}: {pe}")
 
         # Fallback: try CommonTeamRoster for height/weight/position/jersey.
         # Also match by name (not player_id) because Supabase game-log IDs can
@@ -690,7 +714,6 @@ def get_player_stats(name: str):
                 team_id = TEAM_IDS.get(team_abbr)
                 if team_id:
                     df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
-                    player_name_str = str(nba_players.iloc[0]["PLAYER_NAME"])
                     # Match by name so we work even when the two ID systems differ
                     pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
                     if pr.empty:
@@ -700,7 +723,7 @@ def get_player_stats(name: str):
                         # Use the roster's player ID — it's what the NBA CDN uses for photos
                         roster_pid = r.get('PLAYER_ID')
                         if roster_pid and not pd.isna(roster_pid):
-                            player_id = int(roster_pid)
+                            official_player_id = int(roster_pid)
                         profile = {
                             "height":     str(r.get('HEIGHT', '')).strip(),
                             "weight":     str(r.get('WEIGHT', '')).strip(),
@@ -710,11 +733,11 @@ def get_player_stats(name: str):
                             "experience": str(r.get('EXP', '')).strip(),
                         }
             except Exception as re:
-                print(f"CommonTeamRoster fallback failed for {player_id}: {re}")
+                print(f"CommonTeamRoster fallback failed for {official_player_id}: {re}")
 
         return {
-            "id":         player_id,
-            "name":       str(nba_players.iloc[0]["PLAYER_NAME"]),
+            "id":         official_player_id,
+            "name":       player_name_str,
             "team":       team_abbr,
             "position":   profile.get("position") or "—",
             "height":     profile.get("height", ""),
