@@ -319,17 +319,58 @@ def _call_nba_api(endpoint_class, **kwargs):
     """
     Call an nba_api stats endpoint class with retry:
     first with no headers (works locally), then with _NBA_HEADERS (works on cloud hosts).
+    Uses a fast timeout (3s) to prevent hanging requests.
     """
     last_err = None
     for headers in (None, _NBA_HEADERS):
         try:
             time.sleep(0.6)
-            instance = endpoint_class(headers=headers, timeout=30, **kwargs)
+            instance = endpoint_class(headers=headers, timeout=3, **kwargs)
             return instance.get_data_frames()[0]
         except Exception as e:
             last_err = e
             print(f"[nba_api] Call to {endpoint_class.__name__} failed (headers={'custom' if headers else 'default'}): {e}")
     raise last_err
+
+
+_roster_cache_file = os.path.join(os.path.dirname(__file__), "nba_team_rosters_cache.json")
+_profile_cache_file = os.path.join(os.path.dirname(__file__), "nba_player_profiles_cache.json")
+
+
+def _load_profile_cache() -> dict:
+    if os.path.exists(_profile_cache_file):
+        try:
+            with open(_profile_cache_file, "r") as f:
+                return _json.loads(f.read())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_profile_cache(cache: dict):
+    try:
+        with open(_profile_cache_file, "w") as f:
+            _json.dump(cache, f, indent=2)
+    except Exception:
+        pass
+
+
+def _load_roster_cache() -> dict:
+    if os.path.exists(_roster_cache_file):
+        try:
+            with open(_roster_cache_file, "r") as f:
+                return _json.loads(f.read())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_roster_cache(cache: dict):
+    try:
+        with open(_roster_cache_file, "w") as f:
+            _json.dump(cache, f, indent=2)
+    except Exception:
+        pass
 
 
 _schedule_cache: dict[str, pd.DataFrame] = {}
@@ -519,6 +560,31 @@ def get_team_roster(abbr: str):
     if not team_id:
         raise HTTPException(status_code=404, detail="Team not found")
 
+    # Try roster cache first
+    roster_cache = _load_roster_cache()
+    if abbr in roster_cache:
+        # Update player profile cache with any height/weight details we have!
+        try:
+            profile_cache = _load_profile_cache()
+            updated = False
+            for player in roster_cache[abbr].get("players", []):
+                p_id_str = str(player["id"])
+                if p_id_str not in profile_cache and player.get("position"):
+                    profile_cache[p_id_str] = {
+                        "height": player.get("height", ""),
+                        "weight": player.get("weight", ""),
+                        "position": player.get("position", ""),
+                        "jersey": player.get("number", ""),
+                        "age": None,
+                        "experience": "",
+                    }
+                    updated = True
+            if updated:
+                _save_profile_cache(profile_cache)
+        except Exception:
+            pass
+        return roster_cache[abbr]
+
     try:
         from nba_api.stats.endpoints import CommonTeamRoster
         df = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
@@ -534,13 +600,37 @@ def get_team_roster(abbr: str):
                 "weight": str(row.get("WEIGHT", "")).strip(),
             })
 
-        return {
+        result = {
             "abbr": abbr,
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
             "players": players,
         }
+        
+        # Save to cache
+        roster_cache[abbr] = result
+        _save_roster_cache(roster_cache)
+        
+        # Warm player profile cache too
+        try:
+            profile_cache = _load_profile_cache()
+            for p in players:
+                p_id_str = str(p["id"])
+                if p_id_str not in profile_cache:
+                    profile_cache[p_id_str] = {
+                        "height": p["height"],
+                        "weight": p["weight"],
+                        "position": p["position"],
+                        "jersey": p["number"],
+                        "age": None,
+                        "experience": "",
+                    }
+            _save_profile_cache(profile_cache)
+        except Exception:
+            pass
+            
+        return result
 
     except Exception as e:
         print(f"Roster fetch failed for {abbr}: {e}")
@@ -679,61 +769,74 @@ def get_player_stats(name: str):
         except Exception:
             pass
 
-        # Fetch real player profile via nba_api
+        # Try to load from player profile cache first
         profile: dict = {}
-        try:
-            from nba_api.stats.endpoints import CommonPlayerInfo
-            from datetime import date
-            df_info = _call_nba_api(CommonPlayerInfo, player_id=official_player_id)
-            pi = df_info.iloc[0]
-            age = None
+        profile_cache = _load_profile_cache()
+        cache_key = str(official_player_id)
+        if cache_key in profile_cache:
+            profile = profile_cache[cache_key]
+        else:
+            # Fetch real player profile via nba_api
             try:
-                bd = pd.to_datetime(str(pi.get('BIRTHDATE', '')))
-                today = date.today()
-                age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
-            except Exception:
-                pass
-            profile = {
-                "height":     str(pi.get('HEIGHT', '')).strip(),
-                "weight":     str(pi.get('WEIGHT', '')).strip(),
-                "position":   str(pi.get('POSITION', '')).strip(),
-                "jersey":     str(pi.get('JERSEY', '')).strip(),
-                "age":        age,
-                "experience": str(pi.get('SEASON_EXP', '')).strip(),
-            }
-        except Exception as pe:
-            print(f"CommonPlayerInfo failed for {official_player_id}: {pe}")
+                from nba_api.stats.endpoints import CommonPlayerInfo
+                from datetime import date
+                df_info = _call_nba_api(CommonPlayerInfo, player_id=official_player_id)
+                pi = df_info.iloc[0]
+                age = None
+                try:
+                    bd = pd.to_datetime(str(pi.get('BIRTHDATE', '')))
+                    today = date.today()
+                    age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+                except Exception:
+                    pass
+                profile = {
+                    "height":     str(pi.get('HEIGHT', '')).strip(),
+                    "weight":     str(pi.get('WEIGHT', '')).strip(),
+                    "position":   str(pi.get('POSITION', '')).strip(),
+                    "jersey":     str(pi.get('JERSEY', '')).strip(),
+                    "age":        age,
+                    "experience": str(pi.get('SEASON_EXP', '')).strip(),
+                }
+                # Save to cache
+                profile_cache[cache_key] = profile
+                _save_profile_cache(profile_cache)
+            except Exception as pe:
+                print(f"CommonPlayerInfo failed for {official_player_id}: {pe}")
 
-        # Fallback: try CommonTeamRoster for height/weight/position/jersey.
-        # Also match by name (not player_id) because Supabase game-log IDs can
-        # differ from CommonTeamRoster IDs; the roster ID is the one the CDN
-        # uses for headshots, so update player_id if we find a match.
-        if not profile:
-            try:
-                from nba_api.stats.endpoints import CommonTeamRoster
-                team_id = TEAM_IDS.get(team_abbr)
-                if team_id:
-                    df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
-                    # Match by name so we work even when the two ID systems differ
-                    pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
-                    if pr.empty:
-                        pr = df_roster[df_roster['PLAYER'].str.contains(player_name_str, case=False, na=False)]
-                    if not pr.empty:
-                        r = pr.iloc[0]
-                        # Use the roster's player ID — it's what the NBA CDN uses for photos
-                        roster_pid = r.get('PLAYER_ID')
-                        if roster_pid and not pd.isna(roster_pid):
-                            official_player_id = int(roster_pid)
-                        profile = {
-                            "height":     str(r.get('HEIGHT', '')).strip(),
-                            "weight":     str(r.get('WEIGHT', '')).strip(),
-                            "position":   str(r.get('POSITION', '')).strip(),
-                            "jersey":     str(r.get('NUM', '')).strip(),
-                            "age":        None,
-                            "experience": str(r.get('EXP', '')).strip(),
-                        }
-            except Exception as re:
-                print(f"CommonTeamRoster fallback failed for {official_player_id}: {re}")
+            # Fallback: try CommonTeamRoster for height/weight/position/jersey.
+            # Also match by name (not player_id) because Supabase game-log IDs can
+            # differ from CommonTeamRoster IDs; the roster ID is the one the CDN
+            # uses for headshots, so update player_id if we find a match.
+            if not profile:
+                try:
+                    from nba_api.stats.endpoints import CommonTeamRoster
+                    team_id = TEAM_IDS.get(team_abbr)
+                    if team_id:
+                        df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
+                        # Match by name so we work even when the two ID systems differ
+                        pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
+                        if pr.empty:
+                            pr = df_roster[df_roster['PLAYER'].str.contains(player_name_str, case=False, na=False)]
+                        if not pr.empty:
+                            r = pr.iloc[0]
+                            # Use the roster's player ID — it's what the NBA CDN uses for photos
+                            roster_pid = r.get('PLAYER_ID')
+                            if roster_pid and not pd.isna(roster_pid):
+                                official_player_id = int(roster_pid)
+                                cache_key = str(official_player_id)
+                            profile = {
+                                "height":     str(r.get('HEIGHT', '')).strip(),
+                                "weight":     str(r.get('WEIGHT', '')).strip(),
+                                "position":   str(r.get('POSITION', '')).strip(),
+                                "jersey":     str(r.get('NUM', '')).strip(),
+                                "age":        None,
+                                "experience": str(r.get('EXP', '')).strip(),
+                            }
+                            # Save to cache
+                            profile_cache[cache_key] = profile
+                            _save_profile_cache(profile_cache)
+                except Exception as re:
+                    print(f"CommonTeamRoster fallback failed for {official_player_id}: {re}")
 
         return {
             "id":         official_player_id,
