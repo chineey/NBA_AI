@@ -188,6 +188,22 @@ except Exception as _e:
 HAS_TOV = 'TOV' in nba_data_df.columns
 
 
+_nba_profiles_dict = {}
+
+def _load_profiles_from_supabase():
+    global _nba_profiles_dict
+    try:
+        if _sb_url and _sb:
+            print("Loading player profiles from Supabase...")
+            resp = _sb.table('nba_player_profiles').select('*').execute()
+            _nba_profiles_dict = {int(x['player_id']): x for x in resp.data}
+            print(f"Loaded {len(_nba_profiles_dict)} player profiles.")
+    except Exception as e:
+        print(f"Failed to load player profiles from Supabase: {e}")
+
+_load_profiles_from_supabase()
+
+
 def _refresh_player_data():
     """Fetch new games from NBA API, upsert to Supabase, reload in-memory dataframe."""
     global nba_data_df, HAS_TOV, _schedule_cache, _schedule_cache_day
@@ -536,7 +552,8 @@ def reload_data():
     global nba_data_df, HAS_TOV
     nba_data_df = _load_from_supabase()
     HAS_TOV = 'TOV' in nba_data_df.columns
-    return {"status": "done", "rows": len(nba_data_df)}
+    _load_profiles_from_supabase()
+    return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict)}
 
 
 @app.get("/teams")
@@ -641,6 +658,7 @@ def get_team_roster(abbr: str):
         unique = team_df.drop_duplicates(subset=['PLAYER_ID'])
         
         from nba_api.stats.static import players as static_players
+        profile_cache = _load_profile_cache()
         players = []
         for _, row in unique.iterrows():
             p_name = str(row['PLAYER_NAME'])
@@ -653,13 +671,32 @@ def get_team_roster(abbr: str):
                     p_id = int(matches[0]['id'])
             except Exception:
                 pass
+
+            # Resolve profile details from memory or cache fallback
+            height = ""
+            weight = ""
+            position = ""
+            jersey = ""
+            if p_id in _nba_profiles_dict:
+                prof = _nba_profiles_dict[p_id]
+                height = prof.get("height", "")
+                weight = prof.get("weight", "")
+                position = prof.get("position", "")
+                jersey = prof.get("jersey", "")
+            else:
+                prof = profile_cache.get(str(p_id), {})
+                height = prof.get("height", "")
+                weight = prof.get("weight", "")
+                position = prof.get("position", "")
+                jersey = prof.get("jersey", "")
+
             players.append({
                 "id": p_id,
                 "name": p_name,
-                "number": "",
-                "position": "",
-                "height": "",
-                "weight": "",
+                "number": jersey,
+                "position": position,
+                "height": height,
+                "weight": weight,
             })
         return {
             "abbr": abbr,
@@ -769,74 +806,77 @@ def get_player_stats(name: str):
         except Exception:
             pass
 
-        # Try to load from player profile cache first
+        # Try to load from player profile memory dict or cache first
         profile: dict = {}
-        profile_cache = _load_profile_cache()
-        cache_key = str(official_player_id)
-        if cache_key in profile_cache:
-            profile = profile_cache[cache_key]
+        if official_player_id in _nba_profiles_dict:
+            profile = _nba_profiles_dict[official_player_id]
         else:
-            # Fetch real player profile via nba_api
-            try:
-                from nba_api.stats.endpoints import CommonPlayerInfo
-                from datetime import date
-                df_info = _call_nba_api(CommonPlayerInfo, player_id=official_player_id)
-                pi = df_info.iloc[0]
-                age = None
+            profile_cache = _load_profile_cache()
+            cache_key = str(official_player_id)
+            if cache_key in profile_cache:
+                profile = profile_cache[cache_key]
+            else:
+                # Fetch real player profile via nba_api
                 try:
-                    bd = pd.to_datetime(str(pi.get('BIRTHDATE', '')))
-                    today = date.today()
-                    age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
-                except Exception:
-                    pass
-                profile = {
-                    "height":     str(pi.get('HEIGHT', '')).strip(),
-                    "weight":     str(pi.get('WEIGHT', '')).strip(),
-                    "position":   str(pi.get('POSITION', '')).strip(),
-                    "jersey":     str(pi.get('JERSEY', '')).strip(),
-                    "age":        age,
-                    "experience": str(pi.get('SEASON_EXP', '')).strip(),
-                }
-                # Save to cache
-                profile_cache[cache_key] = profile
-                _save_profile_cache(profile_cache)
-            except Exception as pe:
-                print(f"CommonPlayerInfo failed for {official_player_id}: {pe}")
+                    from nba_api.stats.endpoints import CommonPlayerInfo
+                    from datetime import date
+                    df_info = _call_nba_api(CommonPlayerInfo, player_id=official_player_id)
+                    pi = df_info.iloc[0]
+                    age = None
+                    try:
+                        bd = pd.to_datetime(str(pi.get('BIRTHDATE', '')))
+                        today = date.today()
+                        age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+                    except Exception:
+                        pass
+                    profile = {
+                        "height":     str(pi.get('HEIGHT', '')).strip(),
+                        "weight":     str(pi.get('WEIGHT', '')).strip(),
+                        "position":   str(pi.get('POSITION', '')).strip(),
+                        "jersey":     str(pi.get('JERSEY', '')).strip(),
+                        "age":        age,
+                        "experience": str(pi.get('SEASON_EXP', '')).strip(),
+                    }
+                    # Save to cache
+                    profile_cache[cache_key] = profile
+                    _save_profile_cache(profile_cache)
+                except Exception as pe:
+                    print(f"CommonPlayerInfo failed for {official_player_id}: {pe}")
 
-            # Fallback: try CommonTeamRoster for height/weight/position/jersey.
-            # Also match by name (not player_id) because Supabase game-log IDs can
-            # differ from CommonTeamRoster IDs; the roster ID is the one the CDN
-            # uses for headshots, so update player_id if we find a match.
-            if not profile:
-                try:
-                    from nba_api.stats.endpoints import CommonTeamRoster
-                    team_id = TEAM_IDS.get(team_abbr)
-                    if team_id:
-                        df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
-                        # Match by name so we work even when the two ID systems differ
-                        pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
-                        if pr.empty:
-                            pr = df_roster[df_roster['PLAYER'].str.contains(player_name_str, case=False, na=False)]
-                        if not pr.empty:
-                            r = pr.iloc[0]
-                            # Use the roster's player ID — it's what the NBA CDN uses for photos
-                            roster_pid = r.get('PLAYER_ID')
-                            if roster_pid and not pd.isna(roster_pid):
-                                official_player_id = int(roster_pid)
-                                cache_key = str(official_player_id)
-                            profile = {
-                                "height":     str(r.get('HEIGHT', '')).strip(),
-                                "weight":     str(r.get('WEIGHT', '')).strip(),
-                                "position":   str(r.get('POSITION', '')).strip(),
-                                "jersey":     str(r.get('NUM', '')).strip(),
-                                "age":        None,
-                                "experience": str(r.get('EXP', '')).strip(),
-                            }
-                            # Save to cache
-                            profile_cache[cache_key] = profile
-                            _save_profile_cache(profile_cache)
-                except Exception as re:
-                    print(f"CommonTeamRoster fallback failed for {official_player_id}: {re}")
+                # Fallback: try CommonTeamRoster for height/weight/position/jersey.
+                # Also match by name (not player_id) because Supabase game-log IDs can
+                # differ from CommonTeamRoster IDs; the roster ID is the one the CDN
+                # uses for headshots, so update player_id if we find a match.
+                if not profile:
+                    try:
+                        from nba_api.stats.endpoints import CommonTeamRoster
+                        team_id = TEAM_IDS.get(team_abbr)
+                        if team_id:
+                            df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
+                            # Match by name so we work even when the two ID systems differ
+                            pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
+                            if pr.empty:
+                                pr = df_roster[df_roster['PLAYER'].str.contains(player_name_str, case=False, na=False)]
+                            if not pr.empty:
+                                r = pr.iloc[0]
+                                # Use the roster's player ID — it's what the NBA CDN uses for photos
+                                roster_pid = r.get('PLAYER_ID')
+                                if roster_pid and not pd.isna(roster_pid):
+                                    official_player_id = int(roster_pid)
+                                    cache_key = str(official_player_id)
+                                profile = {
+                                    "height":     str(r.get('HEIGHT', '')).strip(),
+                                    "weight":     str(r.get('WEIGHT', '')).strip(),
+                                    "position":   str(r.get('POSITION', '')).strip(),
+                                    "jersey":     str(r.get('NUM', '')).strip(),
+                                    "age":        None,
+                                    "experience": str(r.get('EXP', '')).strip(),
+                                }
+                                # Save to cache
+                                profile_cache[cache_key] = profile
+                                _save_profile_cache(profile_cache)
+                    except Exception as re:
+                        print(f"CommonTeamRoster fallback failed for {official_player_id}: {re}")
 
         return {
             "id":         official_player_id,

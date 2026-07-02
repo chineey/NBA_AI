@@ -228,6 +228,117 @@ def fetch_date_range(session, start: date, end: date) -> list:
     return all_rows
 
 
+def update_player_profiles(sb, game_log_df, new_rows):
+    """
+    For all unique players in the game logs, resolve their official NBA ID,
+    fetch their profile from CommonPlayerInfo, and upsert to Supabase.
+    Skips already cached profiles to save API requests.
+    """
+    from nba_api.stats.static import players as static_players
+    from nba_api.stats.endpoints import CommonPlayerInfo
+    import pandas as pd
+
+    # Get all unique player names
+    player_names = set()
+    if not game_log_df.empty:
+        col = 'player_name' if 'player_name' in game_log_df.columns else 'PLAYER_NAME'
+        player_names.update(game_log_df[col].dropna().unique().tolist())
+    for r in new_rows:
+        player_names.add(r['player_name'])
+
+    if not player_names:
+        return
+
+    # Check which profiles already exist in Supabase
+    existing_ids = set()
+    try:
+        resp = sb.table('nba_player_profiles').select('player_id').execute()
+        existing_ids = {int(x['player_id']) for x in resp.data}
+    except Exception as e:
+        print(f"Could not load existing profiles (table might not exist yet): {e}")
+
+    # Resolve official player IDs
+    unique_players = {}
+    for name in player_names:
+        try:
+            matches = static_players.find_players_by_full_name(name)
+            if matches:
+                official_id = int(matches[0]['id'])
+                if official_id not in existing_ids:
+                    unique_players[name] = official_id
+        except Exception:
+            pass
+
+    if not unique_players:
+        print("All player profiles are already cached in Supabase.")
+        return
+
+    print(f"Refreshing profiles for {len(unique_players)} new players...")
+
+    _NBA_HEADERS = {
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Host': 'stats.nba.com',
+        'Origin': 'https://www.nba.com',
+        'Referer': 'https://www.nba.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+    }
+
+    profiles_to_upsert = []
+    for name, official_id in unique_players.items():
+        print(f"  Fetching profile for {name} (ID: {official_id})...")
+        df_info = None
+        for headers in (None, _NBA_HEADERS):
+            try:
+                time.sleep(0.6)  # Safe rate limit delay
+                info = CommonPlayerInfo(player_id=official_id, headers=headers, timeout=3)
+                df_info = info.get_data_frames()[0]
+                break
+            except Exception as e:
+                print(f"    Attempt failed (headers={'custom' if headers else 'default'}): {e}")
+
+        if df_info is None or df_info.empty:
+            print(f"    Failed to fetch {name} completely.")
+            continue
+
+        try:
+            pi = df_info.iloc[0]
+            bd_str = str(pi.get('BIRTHDATE', ''))
+            age = None
+            try:
+                bd = pd.to_datetime(bd_str)
+                today = date.today()
+                age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+            except Exception:
+                pass
+
+            profiles_to_upsert.append({
+                "player_id": official_id,
+                "name": name,
+                "height": str(pi.get('HEIGHT', '')).strip(),
+                "weight": str(pi.get('WEIGHT', '')).strip(),
+                "position": str(pi.get('POSITION', '')).strip(),
+                "jersey": str(pi.get('JERSEY', '')).strip(),
+                "age": age,
+                "experience": str(pi.get('SEASON_EXP', '')).strip(),
+            })
+        except Exception as e:
+            print(f"    Failed to parse {name}: {e}")
+
+    if profiles_to_upsert:
+        print(f"Upserting {len(profiles_to_upsert)} profiles to Supabase...")
+        for i in range(0, len(profiles_to_upsert), 100):
+            batch = profiles_to_upsert[i:i+100]
+            try:
+                sb.table('nba_player_profiles').upsert(batch).execute()
+                print(f"  {min(i + 100, len(profiles_to_upsert))}/{len(profiles_to_upsert)} profiles upserted")
+            except Exception as e:
+                print(f"    Upsert batch failed: {e}")
+
+
 def run():
     sb_url = os.getenv("SUPABASE_URL", "")
     sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
@@ -262,6 +373,12 @@ def run():
         print(f"Fetching from {start.isoformat()} → {today.isoformat()}...")
 
     rows = fetch_date_range(session, start, today)
+
+    # Upsert profiles for new/all players
+    try:
+        update_player_profiles(sb, df, rows)
+    except Exception as pe:
+        print(f"Failed to update player profiles: {pe}")
 
     if not rows:
         print("No new games found.")
