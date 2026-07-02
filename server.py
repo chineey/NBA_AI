@@ -233,6 +233,10 @@ def _load_rosters_from_supabase():
 
 _load_rosters_from_supabase()
 
+# Protect runtime requests from infinite external socket hangs
+import socket
+socket.setdefaulttimeout(3.0)
+
 
 def _refresh_player_data():
     """Fetch new games from NBA API, upsert to Supabase, reload in-memory dataframe."""
@@ -438,7 +442,7 @@ def _fetch_schedule(season: str) -> pd.DataFrame | None:
     for headers in (None, _NBA_HEADERS):
         try:
             time.sleep(1)
-            sched = ScheduleLeagueV2(league_id='00', season=season, headers=headers, timeout=60)
+            sched = ScheduleLeagueV2(league_id='00', season=season, headers=headers, timeout=3)
             df = sched.get_data_frames()[0]
             # Normalise to lowercase so column detection is case-insensitive
             df.columns = [c.lower() for c in df.columns]
