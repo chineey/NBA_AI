@@ -315,6 +315,23 @@ def _next_season() -> str:
     return f"{start_year}-{str(start_year + 1)[2:]}"
 
 
+def _call_nba_api(endpoint_class, **kwargs):
+    """
+    Call an nba_api stats endpoint class with retry:
+    first with no headers (works locally), then with _NBA_HEADERS (works on cloud hosts).
+    """
+    last_err = None
+    for headers in (None, _NBA_HEADERS):
+        try:
+            time.sleep(0.6)
+            instance = endpoint_class(headers=headers, timeout=30, **kwargs)
+            return instance.get_data_frames()[0]
+        except Exception as e:
+            last_err = e
+            print(f"[nba_api] Call to {endpoint_class.__name__} failed (headers={'custom' if headers else 'default'}): {e}")
+    raise last_err
+
+
 _schedule_cache: dict[str, pd.DataFrame] = {}
 _schedule_cache_day: str | None = None
 
@@ -504,9 +521,7 @@ def get_team_roster(abbr: str):
 
     try:
         from nba_api.stats.endpoints import CommonTeamRoster
-        time.sleep(1)
-        roster = CommonTeamRoster(team_id=team_id, season=_current_season())
-        df = roster.get_data_frames()[0]
+        df = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
 
         players = []
         for _, row in df.iterrows():
@@ -645,9 +660,8 @@ def get_player_stats(name: str):
         try:
             from nba_api.stats.endpoints import CommonPlayerInfo
             from datetime import date
-            time.sleep(0.6)
-            info = CommonPlayerInfo(player_id=player_id)
-            pi = info.get_data_frames()[0].iloc[0]
+            df_info = _call_nba_api(CommonPlayerInfo, player_id=player_id)
+            pi = df_info.iloc[0]
             age = None
             try:
                 bd = pd.to_datetime(str(pi.get('BIRTHDATE', '')))
@@ -675,9 +689,7 @@ def get_player_stats(name: str):
                 from nba_api.stats.endpoints import CommonTeamRoster
                 team_id = TEAM_IDS.get(team_abbr)
                 if team_id:
-                    time.sleep(0.6)
-                    roster = CommonTeamRoster(team_id=team_id, season=_current_season())
-                    df_roster = roster.get_data_frames()[0]
+                    df_roster = _call_nba_api(CommonTeamRoster, team_id=team_id, season=_current_season())
                     player_name_str = str(nba_players.iloc[0]["PLAYER_NAME"])
                     # Match by name so we work even when the two ID systems differ
                     pr = df_roster[df_roster['PLAYER'].str.lower() == player_name_str.lower()]
