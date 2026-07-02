@@ -237,6 +237,20 @@ _load_rosters_from_supabase()
 import socket
 socket.setdefaulttimeout(3.0)
 
+# Warm schedule cache in a background thread on startup
+import threading
+def _warm_schedule_cache():
+    try:
+        _fetch_schedule(_current_season())
+    except Exception:
+        pass
+    try:
+        _fetch_schedule(_next_season())
+    except Exception:
+        pass
+
+threading.Thread(target=_warm_schedule_cache, daemon=True).start()
+
 
 def _refresh_player_data():
     """Fetch new games from NBA API, upsert to Supabase, reload in-memory dataframe."""
@@ -435,7 +449,10 @@ def _fetch_schedule(season: str) -> pd.DataFrame | None:
         _schedule_cache = {}
         _schedule_cache_day = today_str
     if season in _schedule_cache:
-        return _schedule_cache[season]
+        # Return None if the cached value was a failure placeholder
+        val = _schedule_cache[season]
+        return None if val.empty else val
+        
     from nba_api.stats.endpoints import ScheduleLeagueV2
     # Default headers first — the custom Host/keep-alive set resets connections
     # on this endpoint locally — then the browser-like set for cloud hosts.
@@ -451,6 +468,9 @@ def _fetch_schedule(season: str) -> pd.DataFrame | None:
             return df
         except Exception as e:
             print(f"ScheduleLeagueV2 fetch failed for {season} (headers={'custom' if headers else 'default'}): {e}")
+            
+    # Cache the failure as an empty DataFrame to avoid repeating blocked network requests
+    _schedule_cache[season] = pd.DataFrame()
     return None
 
 
