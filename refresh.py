@@ -51,27 +51,6 @@ def current_season_label() -> str:
     return f"{start}-{str(start + 1)[2:]}"
 
 
-def load_from_supabase_metadata(sb) -> tuple[pd.DataFrame, set[str]]:
-    """
-    Fetch only game_date and player_name columns to optimize loading speed.
-    """
-    rows, page, size = [], 0, 2000
-    while True:
-        resp = sb.table('nba_player_game_logs').select('game_date,player_name').range(
-            page * size, (page + 1) * size - 1
-        ).execute()
-        batch = resp.data
-        if not batch:
-            break
-        rows.extend(batch)
-        if len(batch) < size:
-            break
-        page += 1
-    if not rows:
-        return pd.DataFrame(), set()
-    df = pd.DataFrame(rows)
-    player_names = set(df['player_name'].dropna().unique())
-    return df, player_names
 
 
 def parse_minutes(val) -> float:
@@ -96,7 +75,7 @@ def safe_int(val) -> int:
 
 
 def parse_shooting(stat: str):
-    """Parse 'made-attempted' string → (made, attempted, pct)."""
+    """Parse 'made-attempted' string -> (made, attempted, pct)."""
     try:
         m, a = stat.split('-')
         made = int(m)
@@ -224,20 +203,48 @@ def fetch_date_range(session, start: date, end: date) -> list:
     return all_rows
 
 
-def update_player_profiles(sb, existing_player_names, new_rows):
+def update_player_profiles(sb, new_rows):
     """
-    For all unique players in the game logs, resolve their official NBA ID,
-    fetch their profile from CommonPlayerInfo, and upsert to Supabase.
+    For new players in the scraped game logs, resolve official IDs, fetch profile, and upsert.
     Skips already cached profiles to save API requests.
     """
     from nba_api.stats.static import players as static_players
     from nba_api.stats.endpoints import CommonPlayerInfo
     import pandas as pd
 
-    # Get all unique player names
-    player_names = set(existing_player_names)
-    for r in new_rows:
-        player_names.add(r['player_name'])
+    # Get unique player names from the new games
+    player_names = set(r['player_name'] for r in new_rows if r.get('player_name'))
+    
+    if not player_names:
+        return
+
+    # Check which profiles already exist in Supabase
+    existing_ids = set()
+    try:
+        resp = sb.table('nba_player_profiles').select('player_id').execute()
+        existing_ids = {int(x['player_id']) for x in resp.data}
+    except Exception as e:
+        print(f"Could not load existing profiles (table might not exist yet): {e}")
+
+    # If the profiles table is completely empty, seed by loading all historical players
+    if not existing_ids:
+        print("Profiles cache is empty. Seeding with all historical players from database...")
+        try:
+            rows, page, size = [], 0, 1000
+            while True:
+                resp = sb.table('nba_player_game_logs').select('player_name').range(
+                    page * size, (page + 1) * size - 1
+                ).execute()
+                batch = resp.data
+                if not batch:
+                    break
+                rows.extend(batch)
+                if len(batch) < size:
+                    break
+                page += 1
+            player_names.update([x['player_name'] for x in rows if x.get('player_name')])
+        except Exception as e:
+            print(f"Could not load historical player names: {e}")
 
     if not player_names:
         return
@@ -424,9 +431,15 @@ def run():
     print(f"Season: {current_season_label()}")
     print("Loading current data from Supabase...")
     
-    # Optimize startup: fetch metadata only
-    df, existing_player_names = load_from_supabase_metadata(sb)
-    print(f"Current rows in Supabase: {len(df)}")
+    print("Checking database for existing game logs...")
+    start = None
+    try:
+        resp = sb.table('nba_player_game_logs').select('game_date').order('game_date', desc=True).limit(1).execute()
+        if resp.data:
+            start = pd.to_datetime(resp.data[0]['game_date']).date()
+            print(f"Latest game date in database: {start.isoformat()}")
+    except Exception as e:
+        print(f"Could not load latest game date (table may be empty): {e}")
 
     today = date.today()
 
@@ -443,21 +456,19 @@ def run():
     if is_nba_api:
         print("Detected NBA API data — clearing Supabase and re-seeding from ESPN...")
         sb.table('nba_player_game_logs').delete().neq('player_id', 0).execute()
-        df = pd.DataFrame()
-        existing_player_names = set()
+        start = None
 
-    if df.empty:
+    if start is None:
         start = current_season_start()
-        print(f"Fetching full season from {start.isoformat()} → {today.isoformat()}...")
+        print(f"Fetching full season from {start.isoformat()} -> {today.isoformat()}...")
     else:
-        start = pd.to_datetime(df['game_date'].max()).date()
-        print(f"Fetching from {start.isoformat()} → {today.isoformat()}...")
+        print(f"Fetching from {start.isoformat()} -> {today.isoformat()}...")
 
     rows = fetch_date_range(session, start, today)
 
     # Upsert profiles for new/all players
     try:
-        update_player_profiles(sb, existing_player_names, rows)
+        update_player_profiles(sb, rows)
     except Exception as pe:
         print(f"Failed to update player profiles: {pe}")
 
