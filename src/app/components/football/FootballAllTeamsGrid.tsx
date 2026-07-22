@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 
-type TeamEntry = {
+export type TeamEntry = {
   id: number;
   name: string;
   shortName: string;
@@ -16,10 +16,16 @@ const LEAGUE_COLORS: Record<string, string> = {
   BL1: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   SA:  'bg-blue-500/20   text-blue-400   border-blue-500/30',
   FL1: 'bg-cyan-500/20   text-cyan-400   border-cyan-500/30',
+  CL:  'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  DED: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  PPL: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  ELC: 'bg-pink-500/20   text-pink-400   border-pink-500/30',
+  BSA: 'bg-teal-500/20   text-teal-400   border-teal-500/30',
 };
 
 const LEAGUE_LABELS: Record<string, string> = {
   PL: 'Premier League', PD: 'La Liga', BL1: 'Bundesliga', SA: 'Serie A', FL1: 'Ligue 1',
+  CL: 'Champions League', DED: 'Eredivisie', PPL: 'Primeira Liga', ELC: 'Championship', BSA: 'Brasileirão',
 };
 
 type Props = {
@@ -66,7 +72,7 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
     return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
-  const leagues = ['All', 'PL', 'PD', 'BL1', 'SA', 'FL1'];
+  const leagues = ['All', 'PL', 'PD', 'BL1', 'SA', 'FL1', 'CL', 'DED', 'PPL', 'ELC', 'BSA'];
   const filtered = (teams).filter(t => {
     const q   = search.toLowerCase();
     const hit = !q || t.name.toLowerCase().includes(q) || (t.shortName || '').toLowerCase().includes(q) || (t.tla || '').toLowerCase().includes(q);
@@ -79,8 +85,8 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
         <Loader2 className="size-8 text-green-500 animate-spin" />
         <p className="text-green-500 animate-pulse text-sm">
           {cacheWait
-            ? 'Server is loading team data for the first time (~2 min). Checking again in 10s…'
-            : 'Loading teams from top 5 leagues…'}
+            ? "Team data isn't loaded yet — checking again in 10s…"
+            : 'Loading teams from all 10 leagues…'}
         </p>
       </div>
     );

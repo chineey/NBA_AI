@@ -23,6 +23,11 @@ const LEAGUE_COLORS: Record<string, string> = {
   BL1: 'bg-yellow-500/20 text-yellow-400',
   SA:  'bg-blue-500/20   text-blue-400',
   FL1: 'bg-cyan-500/20   text-cyan-400',
+  CL:  'bg-indigo-500/20 text-indigo-400',
+  DED: 'bg-orange-500/20 text-orange-400',
+  PPL: 'bg-emerald-500/20 text-emerald-400',
+  ELC: 'bg-pink-500/20   text-pink-400',
+  BSA: 'bg-teal-500/20   text-teal-400',
 };
 
 const POS_COLOR: Record<string, string> = {
@@ -96,7 +101,8 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
           <div className="flex flex-col items-center justify-center gap-4 py-12 px-4 text-center">
             <Target className="size-10 text-gray-700" />
             <p className="text-gray-500 text-sm">
-              Search all squad members from Premier League, La Liga, Bundesliga, Serie A & Ligue 1
+              Search all squad members across the Premier League, La Liga, Bundesliga, Serie A,
+              Ligue 1, Champions League, Eredivisie, Primeira Liga, Championship & Brasileirão
             </p>
           </div>
         ) : loading ? (

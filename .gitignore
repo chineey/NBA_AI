@@ -8,3 +8,4 @@ __pycache__
 .env.development
 docs
 international_results.csv
+HOW_IT_WORKS.md

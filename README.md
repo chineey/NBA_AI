@@ -5,9 +5,9 @@ A full-stack NBA stats and prediction tool. The original UI design is available 
 
 ## Stack
 
-- **Frontend:** React + Vite
+- **Frontend:** React + Vite + TypeScript, gated behind Supabase Auth (email/password login)
 - **Backend:** FastAPI (Python), hosted on Render
-- **Database:** Supabase (PostgreSQL) — stores player game logs
+- **Database:** Supabase (PostgreSQL) — player game logs, player profiles, and team rosters
 - **AI:** Statistical models + Gemini 2.5 Flash refinement
 
 ## Prediction engines
@@ -24,25 +24,29 @@ Predictions are anchored by a statistical model (`nba_model.py`), not LLM guessw
 
 Before refinement, a Google-Search-grounded Gemini call (`gemini_context.py`) researches what the game logs cannot show: injury report status, minutes restrictions, role changes, and key opponent absences. The findings are injected into the refinement prompt with an **evidence-gated clamp**: Gemini may move numbers ±15% on judgement alone, and up to ±30% only when it cites a concrete, dated news item. If the news lists the player as OUT or QUESTIONABLE, the response carries a `player_status` flag the UI surfaces as a warning banner (the projection itself stays conditional on him playing). If Gemini is unavailable, the model's numbers are returned directly — the endpoint never fails because of the LLM.
 
-### Football (World Cup)
+### Football (10 club competitions)
 
-`football_prediction.py` implements a time-decayed Poisson model with the Dixon-Coles low-score correction — the same family of model bookmakers use to seed football odds. From each team's recent finished matches it estimates attack/defense strength (recent games weighted more, shrunk toward baseline on small samples), converts them to expected goals, and derives every market from the full score matrix:
+Like the NBA side, football data is ingested once into Supabase and served from an in-memory cache — the deployed backend never calls football-data.org itself, which avoids the free tier's 10 requests/minute limit under real traffic. (Earlier versions of this app called the API live per request for World Cup fixtures only; that's been replaced with this DB-backed, multi-league design.)
 
-- Win / Draw / Win probabilities and double chance
-- Over/Under 0.5 through 4.5 goals
-- Both teams to score
-- Most likely correct scores and the predicted full-time score
+`football_prediction.py` implements a time-decayed Poisson model with the Dixon-Coles low-score correction — the same family of model bookmakers use to seed football odds. Club competitions have no equivalent to the decades of international history a national-team model could lean on, so each team's attack/defense strength is estimated purely from matches ingested into our own database (recent games weighted more, shrunk toward a neutral baseline on small samples) rather than an external rating. Every market is derived from the resulting score matrix.
 
-Endpoints:
+Endpoints (all DB-backed, no live API calls):
 
 | Endpoint | Description |
 |---|---|
-| `GET /football/worldcup/predict/{match_id}` | Full model prediction for a fixture |
-| `GET /football/worldcup/assists?limit=20` | Top assist providers |
+| `GET /football/competitions` | The 10 ingested competitions |
+| `GET /football/competitions/{code}/teams` | Teams in a competition |
+| `GET /football/all-teams` | Every team across all 10 competitions |
+| `GET /football/players/search?name=` | Player search across all leagues |
+| `GET /football/teams/{id}/squad` | Team squad |
+| `GET /football/teams/{id}?competition_code=` | Recent form, season stats, next match |
+| `POST /football/predict/team` | AI-refined prediction: goals for/against, clean sheet %, win/draw/loss |
+| `GET /football/player/{id}` | Player season stats |
+| `POST /football/predict/player` | AI-refined prediction: goals/assists for the player's next match |
 
-For finished matches, only form from before kickoff is used (no data leakage). Team form is cached for 6 hours to respect the football-data.org free-tier rate limit. Clicking any fixture card in the UI opens the prediction modal.
+**Data pipeline.** `football_refresh.py`, run manually (`python football_refresh.py`), pulls all 10 free-tier club competitions — Premier League, Bundesliga, Serie A, La Liga, Ligue 1, Champions League, Eredivisie, Primeira Liga, Championship, and Brasileirão — into Supabase: competitions, teams, a full season of matches per competition, standings, and scorer/assist stats, plus squads where the API plan allows it (falls back to a scorer-derived partial roster otherwise). Every football-data.org call goes through a sliding-window throttle capped at 9 requests/minute (a safety margin under the confirmed 10/min free-tier limit); a full run is ~250-300 calls, roughly 25-35 minutes. Every upsert is keyed on football-data.org's own IDs, so re-running any time (e.g. after a matchday) is always safe.
 
-**Elo priors and training.** The free data tier has no national-team matches outside the World Cup itself, so each team starts from an Elo strength prior instead of a neutral baseline; observed tournament results blend in on top via Bayesian shrinkage (form trust backtest-tuned to ~29% at 20 games — heavier trust scored worse because raw goal counts ignore opponent strength), plus a light last-3 head-to-head adjustment (~9% influence; stronger H2H weighting hurt the backtest). `football_train.py` recomputes everything offline from the [martj42 international results dataset](https://github.com/martj42/international_results) (~49k matches since 1872): it derives current Elo ratings for all 48 teams, tunes the model constants by grid search on pre-2022 data, backtests on 2022+ (4,570 matches incl. WC 2022; tuned model 0.8755 1X2 log loss vs 1.0986 uniform — also beating an XGBoost comparison at 0.8823), and writes `elo_ratings.json` + `h2h_history.json`, which the live model loads at startup. Re-run it after each international window to refresh.
+Same evidence-gated clamp as the NBA side: Gemini may refine the model's goal/assist numbers by ±15% on judgement alone, up to ±30% only when grounded news backs the move — win/draw/loss and clean-sheet probabilities always come straight from the statistical model, never from the LLM.
 
 ## Running locally
 
@@ -63,17 +67,38 @@ uvicorn server:app --reload
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key |
 | `GEMINI_API` | Gemini API key |
+| `FOOTBALL_API_KEY` | football-data.org API key — only needed locally by `football_refresh.py`; the deployed backend reads exclusively from Supabase |
 | `ALLOWED_ORIGINS` | Comma-separated list of allowed CORS origins |
 
 If `SUPABASE_URL` is not set, the backend falls back to `nba_player_game_logs.csv` for local development.
 
-## Data refresh
+## Environment variables (frontend)
 
-Player game logs are updated daily at **9 AM UTC** via APScheduler running inside the FastAPI process.
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Backend URL, baked into the JS bundle at build time |
+| `VITE_FOOTBALL_API_URL` | Football API base URL — defaults to `http://127.0.0.1:8001` for local dev against `football_server.py` |
+| `VITE_SUPABASE_URL` | Supabase project URL, used by the frontend Supabase Auth client |
+| `VITE_SUPABASE_ANON` | Supabase anon/public key, used for login/signup |
 
-- Fetches new games from the NBA API since the last known game date
-- Upserts records into Supabase (no duplicates)
-- Reloads the in-memory dataframe after each refresh
+## Data refresh (NBA)
+
+_For football, see `football_refresh.py` under **Prediction engines → Football** above — same idea, different script._
+
+Game logs are **not** refreshed automatically in production. `stats.nba.com` blocks requests from Render's datacenter IPs, so the in-process APScheduler job (still wired up as a fallback, cron `09:00 UTC`) fails on every real deploy. The backend only ever reads from Supabase — it never fetches game data itself in production.
+
+The real pipeline is `refresh.py`, run manually from a local machine:
+
+- Scrapes ESPN's public scoreboard + box-score endpoints (no API key, no IP restrictions) for every day since the last known game date — or since October 1st if the table is empty or a new season just rolled over
+- Resolves and upserts player profiles (height/weight/position/jersey/age via `nba_api`'s `CommonPlayerInfo`) and team rosters (via `CommonTeamRoster`) for any newly-seen players
+- Upserts everything into Supabase in batches of 500, keyed on `(player_id, game_id)` — safe to re-run
+- The live backend only reloads its in-memory dataframe from Supabase on startup, so a Render restart/redeploy (or waiting for the next natural restart) is what actually surfaces the new rows — `GET /refresh` re-runs the broken NBA-API fallback above and won't pick them up
+
+```bash
+python refresh.py
+```
+
+`espn_refresh.py` is a companion script that refreshes just team rosters from ESPN (`python espn_refresh.py --team BOS`, or all teams by default) — handy for picking up trades/signings between full game-log refreshes.
 
 ### Season handling
 

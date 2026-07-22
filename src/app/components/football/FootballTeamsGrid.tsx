@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, Loader2 } from 'lucide-react';
 
-type FootballTeam = {
+export type FootballTeam = {
   id: number;
   name: string;
   shortName: string;

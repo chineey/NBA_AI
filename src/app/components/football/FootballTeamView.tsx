@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Loader2, Trophy, TrendingUp, Sparkles, Users } from 'lucide-react';
 
-type SquadPlayer = {
+export type SquadPlayer = {
   id: number;
   name: string;
   position: string;
