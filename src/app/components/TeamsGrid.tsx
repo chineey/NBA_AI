@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Search, Shield } from 'lucide-react';
+import { toast } from 'sonner';
+import { Input } from '@/app/components/ui/input';
+import { Skeleton } from '@/app/components/ui/skeleton';
 
 type NBATeam = {
   abbr: string;
@@ -21,7 +24,7 @@ export function TeamsGrid({ onSelectTeam }: Props) {
     fetch(`${import.meta.env.VITE_API_URL}/teams`)
       .then(r => r.json())
       .then(setTeams)
-      .catch(console.error)
+      .catch(e => { console.error(e); toast.error('Could not load NBA teams', { description: 'Please refresh and try again.' }); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -34,10 +37,10 @@ export function TeamsGrid({ onSelectTeam }: Props) {
   if (loading) {
     return (
       <div className="space-y-6 animate-fade-in">
-        <div className="h-9 w-56 rounded-lg shimmer" />
+        <Skeleton className="h-9 w-56 rounded-lg" />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {Array.from({ length: 18 }).map((_, i) => (
-            <div key={i} className="h-36 rounded-2xl shimmer" style={{ animationDelay: `${i * 60}ms` }} />
+            <Skeleton key={i} className="h-36 rounded-2xl" style={{ animationDelay: `${i * 60}ms` }} />
           ))}
         </div>
       </div>
@@ -57,13 +60,13 @@ export function TeamsGrid({ onSelectTeam }: Props) {
           </div>
         </div>
         <div className="relative w-full sm:w-64 group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500 group-focus-within:text-orange-400 transition-colors" />
-          <input
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500 group-focus-within:text-orange-400 transition-colors z-10" />
+          <Input
             type="text"
             placeholder="Search teams..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-full pl-10 pr-4 py-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/50 transition-all text-sm"
+            className="w-full rounded-full border-white/[0.08] bg-white/[0.04] pl-10 pr-4 py-2 h-auto text-white placeholder:text-gray-500 focus-visible:ring-orange-500/40 focus-visible:border-orange-500/50 text-sm"
           />
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Grid3x3, Trophy } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { CompetitionsGrid } from './CompetitionsGrid';
 import { FootballTeamsGrid, type FootballTeam } from './FootballTeamsGrid';
 import { FootballAllTeamsGrid, type TeamEntry } from './FootballAllTeamsGrid';
@@ -128,24 +129,22 @@ export function FootballApp() {
     // view === 'browse'
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800 w-fit">
-          <button
-            onClick={() => setBrowseMode('competitions')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              browseMode === 'competitions' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Trophy className="size-3.5" /> By Competition
-          </button>
-          <button
-            onClick={() => setBrowseMode('all-teams')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              browseMode === 'all-teams' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Grid3x3 className="size-3.5" /> All Teams
-          </button>
-        </div>
+        <Tabs value={browseMode} onValueChange={(v) => setBrowseMode(v as BrowseMode)}>
+          <TabsList className="h-auto w-fit rounded-full border border-white/[0.08] bg-white/[0.04] p-1">
+            <TabsTrigger
+              value="competitions"
+              className="gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-gray-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-green-500/25"
+            >
+              <Trophy className="size-3.5" /> By Competition
+            </TabsTrigger>
+            <TabsTrigger
+              value="all-teams"
+              className="gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold text-gray-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-green-500/25"
+            >
+              <Grid3x3 className="size-3.5" /> All Teams
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {browseMode === 'competitions' ? (
           <CompetitionsGrid onSelect={handleSelectCompetition} />
@@ -165,7 +164,7 @@ export function FootballApp() {
       <div className="lg:col-span-3">
         {mainContent()}
       </div>
-      <div className="lg:col-span-1">
+      <div className="lg:col-span-1 lg:sticky lg:top-24 self-start">
         <FootballPlayerSearch
           onSelectPlayer={handleSelectPlayerFromSearch}
           selectedPlayerId={view === 'player' ? selectedPlayer?.playerId ?? null : null}

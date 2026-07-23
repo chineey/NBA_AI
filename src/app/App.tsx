@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { AuthPage } from './components/AuthPage';
 import { PlayerStatsColumn } from '@/app/components/PlayerStatsColumn';
@@ -7,7 +8,13 @@ import { TeamsGrid } from '@/app/components/TeamsGrid';
 import { TeamRoster, type RosterPlayer } from '@/app/components/TeamRoster';
 import { TeamPrediction } from '@/app/components/TeamPrediction';
 import { FootballApp } from '@/app/components/football/FootballApp';
-import { TrendingUp, Search, User, Shield, ArrowLeft, LogOut, Sparkles } from 'lucide-react';
+import { BackButton } from '@/app/components/BackButton';
+import { AppSidebar } from '@/app/components/AppSidebar';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/app/components/ui/sidebar';
+import { Separator } from '@/app/components/ui/separator';
+import { Button } from '@/app/components/ui/button';
+import { Input } from '@/app/components/ui/input';
+import { Search } from 'lucide-react';
 
 type Sport = 'nba' | 'football';
 type Mode = 'players' | 'teams';
@@ -68,6 +75,7 @@ export default function App() {
       setSelectedPlayer(data);
     } catch (error) {
       console.error('Failed to fetch player:', error);
+      toast.error('Player not found', { description: `No stats available for "${name}". Check the spelling and try again.` });
     }
     setLoading(false);
   };
@@ -92,6 +100,7 @@ export default function App() {
       setTeamView('player');
     } catch (error) {
       console.error('Failed to fetch player:', error);
+      toast.error('Could not load player stats', { description: 'Please try again in a moment.' });
     }
     setLoading(false);
   };
@@ -121,6 +130,7 @@ export default function App() {
       setTeamView('prediction');
     } catch (error) {
       console.error('Failed to fetch team data:', error);
+      toast.error('Could not load team data', { description: 'Please try again in a moment.' });
     }
     setLoading(false);
   };
@@ -153,13 +163,7 @@ export default function App() {
     if (teamView === 'prediction' && teamData) {
       return (
         <div className="space-y-4 animate-fade-up">
-          <button
-            onClick={() => setTeamView('roster')}
-            className="group flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm"
-          >
-            <ArrowLeft className="size-4 group-hover:-translate-x-0.5 transition-transform" />
-            Back to roster
-          </button>
+          <BackButton onClick={() => setTeamView('roster')} label="Back to roster" />
           <TeamPrediction team={teamData} />
         </div>
       );
@@ -168,13 +172,7 @@ export default function App() {
     // player view
     return (
       <div className="space-y-4 animate-fade-up">
-        <button
-          onClick={() => setTeamView('roster')}
-          className="group flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm"
-        >
-          <ArrowLeft className="size-4 group-hover:-translate-x-0.5 transition-transform" />
-          Back to roster
-        </button>
+        <BackButton onClick={() => setTeamView('roster')} label="Back to roster" />
         {selectedPlayer && <StatPrediction player={selectedPlayer} />}
       </div>
     );
@@ -202,14 +200,15 @@ export default function App() {
           </div>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl stagger-children">
             {POPULAR_PLAYERS.map((name, i) => (
-              <button
+              <Button
                 key={name}
+                variant="outline"
                 style={{ ['--i' as any]: i }}
                 onClick={() => { setSearchQuery(name); fetchPlayer(name); }}
-                className="px-4 py-2 rounded-full text-sm text-gray-300 bg-white/[0.04] border border-white/10 hover:border-orange-500/60 hover:text-white hover:bg-orange-500/10 transition-all duration-200 hover:-translate-y-0.5"
+                className="rounded-full border-white/10 bg-white/[0.04] text-gray-300 hover:-translate-y-0.5 hover:border-orange-500/60 hover:bg-orange-500/10 hover:text-white transition-all duration-200"
               >
                 {name}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -217,18 +216,24 @@ export default function App() {
     }
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-up">
-        <div className="lg:col-span-1">
-          <PlayerStatsColumn
-            players={players}
-            selectedPlayer={selectedPlayer}
-            onSelectPlayer={setSelectedPlayer}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-          />
-        </div>
-        <div className="lg:col-span-2">
-          <StatPrediction player={selectedPlayer} />
+      <div className="space-y-4 animate-fade-up">
+        <BackButton
+          onClick={() => { setSelectedPlayer(null); setPlayers([]); setSearchQuery(''); }}
+          label="Back to search"
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <PlayerStatsColumn
+              players={players}
+              selectedPlayer={selectedPlayer}
+              onSelectPlayer={setSelectedPlayer}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <StatPrediction player={selectedPlayer} />
+          </div>
         </div>
       </div>
     );
@@ -237,9 +242,9 @@ export default function App() {
   const isNba = sport === 'nba';
 
   return (
-    <div className="min-h-screen bg-gray-950 relative">
+    <SidebarProvider className="min-h-svh bg-gray-950">
       {/* Ambient background glow */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden z-0">
         <div
           className={`absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full blur-[140px] opacity-[0.07] transition-colors duration-700 ${
             isNba ? 'bg-orange-500' : 'bg-green-500'
@@ -248,123 +253,53 @@ export default function App() {
         <div className="absolute bottom-0 right-0 w-[500px] h-[400px] rounded-full blur-[160px] opacity-[0.04] bg-indigo-500" />
       </div>
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-gray-950/75 backdrop-blur-xl border-b border-white/[0.06]">
-        <div className="container mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap justify-between items-center gap-x-6 gap-y-3">
-          {/* Brand */}
-          <div className="flex items-center gap-3">
-            <div
-              className={`relative flex items-center justify-center size-10 rounded-xl shadow-lg transition-all duration-500 ${
-                isNba
-                  ? 'bg-gradient-to-br from-orange-500 to-amber-600 shadow-orange-500/30'
-                  : 'bg-gradient-to-br from-green-500 to-emerald-600 shadow-green-500/30'
-              }`}
-            >
-              <TrendingUp className="size-5 text-white" strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1 className="font-display text-lg sm:text-xl text-white font-bold tracking-tight leading-none">
+      <AppSidebar
+        sport={sport}
+        setSport={setSport}
+        mode={mode}
+        switchMode={switchMode}
+        userEmail={user?.email}
+        onSignOut={signOut}
+      />
+
+      <SidebarInset className="relative z-10 bg-transparent">
+        {/* Top bar */}
+        <header className="sticky top-0 z-40 bg-gray-950/75 backdrop-blur-xl border-b border-white/[0.06]">
+          <div className="px-4 sm:px-6 py-3.5 flex flex-wrap justify-between items-center gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <SidebarTrigger className="text-gray-400 hover:text-white hover:bg-white/[0.06]" />
+              <Separator orientation="vertical" className="h-5 bg-white/[0.08]" />
+              <h1 className="font-display text-base sm:text-lg text-white font-bold tracking-tight leading-none truncate">
                 {isNba ? 'NBA Analysis' : 'Football Analysis'}
               </h1>
-              <div className="flex items-center gap-1 mt-1">
-                <Sparkles className={`size-3 ${isNba ? 'text-orange-400' : 'text-green-400'}`} />
-                <span className="text-[11px] text-gray-500 font-medium tracking-wide uppercase">AI-powered predictions</span>
+            </div>
+
+            {/* Search bar — NBA players mode only */}
+            {isNba && mode === 'players' && (
+              <div className="relative w-full md:w-80 group">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500 group-focus-within:text-orange-400 transition-colors z-10" />
+                <Input
+                  type="text"
+                  placeholder="Search player (e.g. Steph Curry)..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={handleSearch}
+                  className="w-full rounded-full border-white/[0.08] bg-white/[0.04] pl-10 pr-4 py-2.5 h-auto text-sm text-white placeholder:text-gray-500 focus-visible:ring-orange-500/40 focus-visible:border-orange-500/50 focus-visible:bg-gray-900"
+                />
               </div>
-            </div>
+            )}
           </div>
+        </header>
 
-          {/* Sport Toggle */}
-          <div className="flex items-center gap-1 bg-white/[0.04] border border-white/[0.08] rounded-full p-1">
-            <button
-              onClick={() => setSport('nba')}
-              className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                isNba
-                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              🏀 NBA
-            </button>
-            <button
-              onClick={() => setSport('football')}
-              className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                !isNba
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-lg shadow-green-500/30'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              ⚽ Football
-            </button>
-          </div>
-
-          {/* NBA sub-mode toggle — only shown for NBA */}
-          {isNba && (
-            <div className="flex items-center gap-1 bg-white/[0.04] border border-white/[0.08] rounded-full p-1">
-              <button
-                onClick={() => switchMode('players')}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                  mode === 'players'
-                    ? 'bg-white/10 text-white shadow-inner border border-white/10'
-                    : 'text-gray-400 hover:text-white border border-transparent'
-                }`}
-              >
-                <User className="size-3.5" />
-                Players
-              </button>
-              <button
-                onClick={() => switchMode('teams')}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                  mode === 'teams'
-                    ? 'bg-white/10 text-white shadow-inner border border-white/10'
-                    : 'text-gray-400 hover:text-white border border-transparent'
-                }`}
-              >
-                <Shield className="size-3.5" />
-                Teams
-              </button>
-            </div>
-          )}
-
-          {/* User + Sign Out */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08]">
-              <span className={`size-1.5 rounded-full ${isNba ? 'bg-orange-400' : 'bg-green-400'}`} />
-              <span className="text-gray-400 text-xs font-medium max-w-[160px] truncate">{user?.email}</span>
-            </div>
-            <button
-              onClick={signOut}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-red-400/90 border border-red-500/20 hover:bg-red-500/10 hover:border-red-500/40 hover:text-red-300 transition-all"
-            >
-              <LogOut className="size-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
-            </button>
-          </div>
-
-          {/* Search bar — NBA players mode only */}
-          {isNba && mode === 'players' && (
-            <div className="relative w-full md:w-80 group">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500 group-focus-within:text-orange-400 transition-colors" />
-              <input
-                type="text"
-                placeholder="Search player (e.g. Steph Curry)..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearch}
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:border-orange-500/50 focus:bg-gray-900 transition-all"
-              />
-            </div>
+        {/* Main Content */}
+        <div className="relative px-4 sm:px-6 py-8">
+          {sport === 'football' ? (
+            <FootballApp />
+          ) : (
+            mode === 'players' ? renderPlayersContent() : renderTeamsContent()
           )}
         </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="relative container mx-auto px-4 sm:px-6 py-8">
-        {sport === 'football' ? (
-          <FootballApp />
-        ) : (
-          mode === 'players' ? renderPlayersContent() : renderTeamsContent()
-        )}
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

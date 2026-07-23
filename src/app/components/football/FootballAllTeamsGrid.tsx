@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Grid3x3 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Input } from '@/app/components/ui/input';
+import { Skeleton } from '@/app/components/ui/skeleton';
+import { Badge } from '@/app/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 
 export type TeamEntry = {
   id: number;
@@ -11,16 +16,16 @@ export type TeamEntry = {
 };
 
 const LEAGUE_COLORS: Record<string, string> = {
-  PL:  'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  PD:  'bg-red-500/20    text-red-400    border-red-500/30',
-  BL1: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  SA:  'bg-blue-500/20   text-blue-400   border-blue-500/30',
-  FL1: 'bg-cyan-500/20   text-cyan-400   border-cyan-500/30',
-  CL:  'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
-  DED: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  PPL: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  ELC: 'bg-pink-500/20   text-pink-400   border-pink-500/30',
-  BSA: 'bg-teal-500/20   text-teal-400   border-teal-500/30',
+  PL:  'bg-purple-500/15 text-purple-300 border-purple-500/25',
+  PD:  'bg-red-500/15    text-red-300    border-red-500/25',
+  BL1: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/25',
+  SA:  'bg-blue-500/15   text-blue-300   border-blue-500/25',
+  FL1: 'bg-cyan-500/15   text-cyan-300   border-cyan-500/25',
+  CL:  'bg-indigo-500/15 text-indigo-300 border-indigo-500/25',
+  DED: 'bg-orange-500/15 text-orange-300 border-orange-500/25',
+  PPL: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25',
+  ELC: 'bg-pink-500/15   text-pink-300   border-pink-500/25',
+  BSA: 'bg-teal-500/15   text-teal-300   border-teal-500/25',
 };
 
 const LEAGUE_LABELS: Record<string, string> = {
@@ -64,7 +69,11 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
           }
         })
         .catch(e => {
-          if (!cancelled) { setError(e.message); setLoading(false); }
+          if (!cancelled) {
+            setError(e.message);
+            setLoading(false);
+            toast.error('Could not load teams', { description: 'Check that the backend is reachable.' });
+          }
         });
     };
 
@@ -81,12 +90,15 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <Loader2 className="size-8 text-green-500 animate-spin" />
-        <p className="text-green-500 animate-pulse text-sm">
-          {cacheWait
-            ? "Team data isn't loaded yet — checking again in 10s…"
-            : 'Loading teams from all 10 leagues…'}
+      <div className="space-y-6 animate-fade-in">
+        <Skeleton className="h-9 w-full max-w-md rounded-full" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl" style={{ animationDelay: `${i * 50}ms` }} />
+          ))}
+        </div>
+        <p className="text-green-400/80 text-sm text-center animate-pulse">
+          {cacheWait ? "Team data isn't cached yet — checking again in 10s…" : 'Loading teams from all 10 leagues…'}
         </p>
       </div>
     );
@@ -94,7 +106,7 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
 
   if (error) {
     return (
-      <div className="text-center py-16 space-y-2">
+      <div className="text-center py-16 space-y-2 animate-fade-in">
         <p className="text-red-400">Failed to load teams: {error}</p>
         <p className="text-gray-500 text-sm">Check that the backend is reachable.</p>
       </div>
@@ -102,80 +114,83 @@ export function FootballAllTeamsGrid({ teams, onTeamsLoaded, onSelectTeam }: Pro
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 animate-fade-up">
       {/* Search + filter row */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
-          <input
+        <div className="relative flex-1 min-w-48 group">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-500 group-focus-within:text-green-400 transition-colors z-10" />
+          <Input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search teams…"
-            className="w-full bg-gray-900 border border-gray-800 text-white rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-green-500"
+            className="w-full h-auto rounded-full border-white/[0.08] bg-white/[0.04] pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-gray-500 focus-visible:ring-green-500/40 focus-visible:border-green-500/50"
           />
         </div>
-        <div className="flex gap-1 bg-gray-900 rounded-lg p-1 border border-gray-800">
-          {leagues.map(l => (
-            <button
-              key={l}
-              onClick={() => setLeagueFilter(l)}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                leagueFilter === l
-                  ? 'bg-green-500 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-800'
-              }`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
+        <Tabs value={leagueFilter} onValueChange={setLeagueFilter}>
+          <TabsList className="h-auto flex-wrap rounded-full border border-white/[0.08] bg-white/[0.04] p-1">
+            {leagues.map(l => (
+              <TabsTrigger
+                key={l}
+                value={l}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold text-gray-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-green-500/25"
+              >
+                {l}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
-      <p className="text-gray-500 text-sm">{filtered.length} teams</p>
+      <div className="flex items-center gap-2 text-gray-500 text-xs font-medium">
+        <Grid3x3 className="size-3.5" />
+        {filtered.length} teams
+      </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {filtered.map(team => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 stagger-children">
+        {filtered.map((team, i) => (
           <button
             key={team.id}
+            style={{ ['--i' as any]: Math.min(i, 24) }}
             onClick={() => onSelectTeam(team)}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col items-center gap-2 hover:border-green-500/50 hover:bg-gray-800/80 transition-all group"
+            className="card-lift relative overflow-hidden bg-gradient-to-b from-gray-900 to-gray-900/60 border border-white/[0.07] hover:border-green-500/50 rounded-2xl p-4 flex flex-col items-center gap-2.5 group hover:shadow-lg hover:shadow-green-500/10"
           >
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-24 h-24 bg-green-500/0 group-hover:bg-green-500/15 rounded-full blur-2xl transition-all duration-300" />
             {team.crest ? (
               <img
                 src={team.crest}
                 alt={team.name}
-                className="size-14 object-contain group-hover:scale-105 transition-transform"
-                onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
+                className="relative size-14 object-contain drop-shadow-lg group-hover:scale-110 transition-transform duration-300"
+                onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
               />
             ) : (
-              <div className="size-14 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+              <div className="relative size-14 rounded-full bg-green-500/10 border border-green-500/25 flex items-center justify-center">
                 <span className="text-green-400 text-xs font-bold">{team.tla}</span>
               </div>
             )}
-            <div className="text-white text-xs font-medium text-center line-clamp-2 leading-tight">
+            <div className="relative text-white text-xs font-semibold text-center line-clamp-2 leading-tight">
               {team.shortName || team.name}
             </div>
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${LEAGUE_COLORS[team.competition.code] ?? 'bg-gray-700 text-gray-400 border-gray-600'}`}>
+            <Badge variant="outline" className={`relative rounded-full text-[10px] font-semibold px-2 py-0.5 ${LEAGUE_COLORS[team.competition.code] ?? 'bg-white/[0.04] text-gray-400 border-white/[0.08]'}`}>
               {team.competition.code}
-            </span>
+            </Badge>
           </button>
         ))}
       </div>
 
       {filtered.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
-          No teams match "{search}"
+        <div className="text-center text-gray-500 py-16 animate-fade-in">
+          No teams match &ldquo;{search}&rdquo;
         </div>
       )}
 
       {/* Legend */}
-      <div className="pt-4 border-t border-gray-800 flex flex-wrap gap-3">
+      <div className="pt-4 border-t border-white/[0.06] flex flex-wrap gap-2">
         {Object.entries(LEAGUE_LABELS).map(([code, name]) => (
-          <span key={code} className={`text-xs px-2 py-0.5 rounded-full border ${LEAGUE_COLORS[code]}`}>
+          <Badge key={code} variant="outline" className={`rounded-full text-[11px] font-medium px-2.5 py-1 ${LEAGUE_COLORS[code]}`}>
             {code} — {name}
-          </span>
+          </Badge>
         ))}
       </div>
     </div>

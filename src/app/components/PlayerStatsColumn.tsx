@@ -1,5 +1,6 @@
 import { ChevronRight, Flame, CalendarRange } from 'lucide-react';
 import { PlayerPhoto } from './PlayerPhoto';
+import { Card, CardContent } from '@/app/components/ui/card';
 
 type Player = {
   id: number;
@@ -118,9 +119,9 @@ export function PlayerStatsColumn({
     <div className="flex flex-col gap-6">
 
       {/* 1. RECENT GAME STATS */}
-      <div className="bg-gray-900/80 rounded-2xl border border-white/[0.07] overflow-hidden">
+      <Card className="gap-0 overflow-hidden border-white/[0.07] bg-gray-900/80 py-0">
         <ColumnHeader icon={<Flame className="size-3.5 text-orange-400" />} title="RECENT FORM (LAST 10)" />
-        <div className="divide-y divide-white/[0.04] max-h-[calc(100vh-16rem)] overflow-y-auto">
+        <CardContent className="max-h-[calc(100vh-16rem)] divide-y divide-white/[0.04] overflow-y-auto p-0">
           {players.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No players found</div>
           ) : (
@@ -134,13 +135,13 @@ export function PlayerStatsColumn({
               />
             ))
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* 2. SEASON STATS */}
-      <div className="bg-gray-900/80 rounded-2xl border border-white/[0.07] overflow-hidden">
+      <Card className="gap-0 overflow-hidden border-white/[0.07] bg-gray-900/80 py-0">
         <ColumnHeader icon={<CalendarRange className="size-3.5 text-orange-400" />} title="SEASON AVERAGES (ALL GAMES)" />
-        <div className="divide-y divide-white/[0.04] max-h-[calc(100vh-16rem)] overflow-y-auto">
+        <CardContent className="max-h-[calc(100vh-16rem)] divide-y divide-white/[0.04] overflow-y-auto p-0">
           {players.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No players found</div>
           ) : (
@@ -154,8 +155,8 @@ export function PlayerStatsColumn({
               />
             ))
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
     </div>
   );

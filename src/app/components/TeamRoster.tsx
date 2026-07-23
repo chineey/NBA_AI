@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, TrendingUp } from 'lucide-react';
+import { ArrowRight, TrendingUp } from 'lucide-react';
+import { toast } from 'sonner';
 import { PlayerPhoto } from './PlayerPhoto';
+import { BackButton } from './BackButton';
+import { Card } from '@/app/components/ui/card';
+import { Badge } from '@/app/components/ui/badge';
+import { Skeleton } from '@/app/components/ui/skeleton';
 
 export type RosterPlayer = {
   id: number;
@@ -41,18 +46,18 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
         return r.json();
       })
       .then(setRoster)
-      .catch(e => setError(e.message))
+      .catch(e => { setError(e.message); toast.error('Could not load roster', { description: e.message }); })
       .finally(() => setLoading(false));
   }, [abbr]);
 
   if (loading) {
     return (
       <div className="space-y-6 animate-fade-in">
-        <div className="h-28 rounded-2xl shimmer" />
-        <div className="h-16 rounded-2xl shimmer" />
+        <Skeleton className="h-28 rounded-2xl" />
+        <Skeleton className="h-16 rounded-2xl" />
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-2xl shimmer" style={{ animationDelay: `${i * 60}ms` }} />
+            <Skeleton key={i} className="h-20 rounded-2xl" style={{ animationDelay: `${i * 60}ms` }} />
           ))}
         </div>
       </div>
@@ -61,11 +66,9 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
 
   if (error || !roster) {
     return (
-      <div className="text-center py-16 space-y-3 animate-fade-in">
+      <div className="flex flex-col items-center justify-center gap-4 py-16 animate-fade-in">
         <p className="text-red-400">{error || 'Failed to load roster'}</p>
-        <button onClick={onBack} className="text-orange-400 hover:text-orange-300 text-sm underline underline-offset-4">
-          Go back
-        </button>
+        <BackButton onClick={onBack} label="Back to teams" />
       </div>
     );
   }
@@ -73,7 +76,7 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
   return (
     <div className="space-y-6 animate-fade-up">
       {/* Team header */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/70 rounded-2xl border border-white/[0.07] p-5">
+      <Card className="relative gap-0 overflow-hidden border-white/[0.07] bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/70 p-5">
         {/* oversized ghost logo backdrop */}
         <img
           src={roster.logoUrl}
@@ -83,13 +86,7 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
         <div className="relative flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-xl text-gray-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all"
-            aria-label="Back to teams"
-          >
-            <ArrowLeft className="size-5" />
-          </button>
+          <BackButton onClick={onBack} label="Teams" />
           <div className="relative">
             <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl" />
             <img
@@ -106,7 +103,7 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
             </p>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Team Prediction CTA */}
       <button
@@ -141,12 +138,20 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
               </div>
               <div className="min-w-0">
                 <div className="text-white font-semibold text-sm truncate group-hover:text-orange-300 transition-colors">{player.name}</div>
-                <div className="text-gray-500 text-xs mt-0.5">
-                  {player.number ? `#${player.number}` : '—'}
-                  {player.position ? ` · ${player.position}` : ''}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  {player.number && (
+                    <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04] px-1.5 py-0 text-[10px] text-gray-400">
+                      #{player.number}
+                    </Badge>
+                  )}
+                  {player.position && (
+                    <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04] px-1.5 py-0 text-[10px] text-gray-400">
+                      {player.position}
+                    </Badge>
+                  )}
                 </div>
                 {(player.height || player.weight) && (
-                  <div className="text-gray-600 text-xs mt-0.5">
+                  <div className="text-gray-600 text-xs mt-1">
                     {[player.height, player.weight ? `${player.weight} lbs` : ''].filter(Boolean).join(' · ')}
                   </div>
                 )}

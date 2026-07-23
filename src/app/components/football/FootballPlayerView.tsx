@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Loader2, Trophy, TrendingUp, Sparkles } from 'lucide-react';
+import { Trophy } from 'lucide-react';
+import { toast } from 'sonner';
+import { BackButton } from '../BackButton';
+import { NextGameBadge, PredStatCard, ReasoningCard, SectionCard, GenerateButton, InfoChip } from '../PredictionShared';
+import { Card } from '@/app/components/ui/card';
+import { Avatar, AvatarFallback } from '@/app/components/ui/avatar';
+import { Skeleton } from '@/app/components/ui/skeleton';
 
 type PlayerData = {
   id: number;
@@ -46,19 +52,19 @@ function PlayerAvatar({ name, position }: { name: string; position: string }) {
   const cls = POS_COLOR[position] || 'bg-gray-700 text-gray-300 border-gray-600';
   const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('');
   return (
-    <div className={`size-20 text-2xl ${cls} rounded-full flex items-center justify-center border font-semibold shrink-0`}>
-      {initials}
-    </div>
+    <Avatar className="size-20 text-2xl">
+      <AvatarFallback className={`border font-semibold ${cls}`}>{initials}</AvatarFallback>
+    </Avatar>
   );
 }
 
 function StatBox({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: boolean }) {
   return (
-    <div className="bg-gray-950 rounded-xl border border-gray-800 p-4 text-center">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+    <Card className="gap-1 border-white/[0.07] bg-gray-950/80 p-4 text-center">
+      <div className="text-xs text-gray-500">{label}</div>
       <div className={`text-3xl font-bold ${accent ? 'text-green-400' : 'text-white'}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-500 mt-1">{sub}</div>}
-    </div>
+      {sub && <div className="text-xs text-gray-500">{sub}</div>}
+    </Card>
   );
 }
 
@@ -100,7 +106,7 @@ export function FootballPlayerView({
         return r.json();
       })
       .then(setPlayerData)
-      .catch(e => setError(e.message))
+      .catch(e => { setError(e.message); toast.error('Could not load player', { description: e.message }); })
       .finally(() => setLoading(false));
   }, [playerId, teamId, competitionCode]);
 
@@ -135,6 +141,7 @@ export function FootballPlayerView({
     } catch (e) {
       console.error(e);
       setPredReason('Failed to generate prediction. Please try again.');
+      toast.error('Prediction failed', { description: 'Please try again in a moment.' });
     } finally {
       setPredLoading(false);
     }
@@ -142,18 +149,20 @@ export function FootballPlayerView({
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <Loader2 className="size-8 text-green-500 animate-spin" />
-        <div className="text-green-500 animate-pulse font-medium">Loading Player Data...</div>
+      <div className="space-y-6 animate-fade-in">
+        <Skeleton className="h-8 w-32 rounded-full" />
+        <Skeleton className="h-36 rounded-2xl" />
+        <Skeleton className="h-40 rounded-2xl" />
+        <Skeleton className="h-48 rounded-2xl" />
       </div>
     );
   }
 
   if (error || !playerData) {
     return (
-      <div className="text-center py-16 space-y-3">
+      <div className="flex flex-col items-center justify-center gap-4 py-16 animate-fade-in">
         <p className="text-red-400">{error || 'Failed to load player data'}</p>
-        <button onClick={onBack} className="text-green-500 hover:text-green-400 text-sm underline">Go back</button>
+        <BackButton onClick={onBack} label={backLabel ?? `Back to ${teamName} squad`} accent="green" />
       </div>
     );
   }
@@ -162,62 +171,42 @@ export function FootballPlayerView({
   // Fall back to props if API returned empty strings
   const displayName     = playerData.name     || initialName;
   const displayPosition = playerData.position || initialPosition;
+  const nextGame = playerData.nextMatch
+    ? { gameDate: playerData.nextMatch.date, opponent: playerData.nextMatch.opponent, homeAway: playerData.nextMatch.homeAway, matchup: `vs ${playerData.nextMatch.opponent}` }
+    : null;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-400">
-      {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
-        <ArrowLeft className="size-4" />
-        {backLabel ?? `Back to ${teamName} squad`}
-      </button>
+    <div className="space-y-6 animate-fade-up">
+      <BackButton onClick={onBack} label={backLabel ?? `Back to ${teamName} squad`} accent="green" />
 
       {/* Player header */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-6">
+      <Card className="relative gap-0 overflow-hidden border-white/[0.07] bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/60 p-6">
+        <div aria-hidden className="absolute -top-16 -right-10 w-56 h-56 bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <PlayerAvatar name={displayName} position={displayPosition} />
             <div className="space-y-2">
-              <h2 className="text-2xl text-white font-bold">{displayName}</h2>
+              <h2 className="font-display text-2xl text-white font-bold tracking-tight">{displayName}</h2>
               <p className="text-gray-400 text-sm">{teamName}{displayPosition ? ` • ${displayPosition}` : ''}</p>
               <div className="flex flex-wrap gap-2">
-                {playerData.shirtNumber != null && (
-                  <span className="bg-gray-800 text-green-400 text-xs font-semibold px-2.5 py-1 rounded-full">
-                    #{playerData.shirtNumber}
-                  </span>
-                )}
-                {playerData.nationality && (
-                  <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">{playerData.nationality}</span>
-                )}
-                {playerData.age != null && (
-                  <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">Age {playerData.age}</span>
-                )}
-                {playerData.dateOfBirth && (
-                  <span className="bg-gray-800 text-gray-300 text-xs px-2.5 py-1 rounded-full">{playerData.dateOfBirth}</span>
-                )}
+                {playerData.shirtNumber != null && <InfoChip accent>#{playerData.shirtNumber}</InfoChip>}
+                {playerData.nationality && <InfoChip>{playerData.nationality}</InfoChip>}
+                {playerData.age != null && <InfoChip>Age {playerData.age}</InfoChip>}
+                {playerData.dateOfBirth && <InfoChip>{playerData.dateOfBirth}</InfoChip>}
               </div>
             </div>
           </div>
-
-          {playerData.nextMatch && (
-            <div className="px-4 py-3 bg-green-500/10 border border-green-500/20 rounded-xl text-right">
-              <div className="text-xs text-green-400 mb-0.5">Next Match</div>
-              <div className="text-white font-medium">vs {playerData.nextMatch.opponent}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {playerData.nextMatch.date} · {playerData.nextMatch.homeAway}
-              </div>
-            </div>
-          )}
+          {nextGame && <NextGameBadge nextGame={nextGame} accent="green" />}
         </div>
-      </div>
+      </Card>
 
       {/* Season stats */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-        <h3 className="text-sm text-gray-400 font-bold tracking-wider mb-4">
-          SEASON STATS — {competitionCode}
-          {season.playedMatches > 0 && (
-            <span className="text-gray-600 ml-2 font-normal">({season.playedMatches} matches played)</span>
-          )}
-        </h3>
+      <SectionCard
+        icon={<Trophy className="size-4 text-green-400" />}
+        title={`Season Stats — ${competitionCode}`}
+        subtitle={season.playedMatches > 0 ? `${season.playedMatches} matches played` : undefined}
+        accent="green"
+      >
         {season.playedMatches === 0 ? (
           <p className="text-gray-500 text-sm">
             This player hasn't appeared in the top scorer charts for {competitionCode} this season.
@@ -225,84 +214,37 @@ export function FootballPlayerView({
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            <StatBox label="GOALS"        value={season.goals}          sub={`${season.goalsPerGame}/game`} accent />
-            <StatBox label="ASSISTS"      value={season.assists}        sub={`${season.assistsPerGame}/game`} />
-            <StatBox label="INVOLVEMENT"  value={season.involvement}    sub="goals + assists" />
-            {season.penalties != null && (
-              <StatBox label="PENALTIES" value={season.penalties} sub="scored" />
-            )}
-            <StatBox label="MATCHES"      value={season.playedMatches}  sub="played" />
+            <StatBox label="GOALS"       value={season.goals}         sub={`${season.goalsPerGame}/game`} accent />
+            <StatBox label="ASSISTS"     value={season.assists}       sub={`${season.assistsPerGame}/game`} />
+            <StatBox label="INVOLVEMENT" value={season.involvement}   sub="goals + assists" />
+            {season.penalties != null && <StatBox label="PENALTIES" value={season.penalties} sub="scored" />}
+            <StatBox label="MATCHES"     value={season.playedMatches} sub="played" />
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* AI Prediction */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800">
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Trophy className="size-5 text-green-500" />
-            <div>
-              <h3 className="text-lg text-white">Predicted Stats for Next Match</h3>
-              {hasGenerated && (
-                <p className="text-xs text-gray-500 mt-0.5">Range shows low – high confidence interval</p>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={generatePrediction}
-            disabled={predLoading}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {predLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {hasGenerated ? 'Regenerate' : 'Generate AI Prediction'}
-          </button>
+      <SectionCard
+        icon={<Trophy className="size-4 text-green-400" />}
+        title="Predicted Stats for Next Match"
+        subtitle={hasGenerated ? 'Range shows low – high confidence interval' : undefined}
+        accent="green"
+        action={<GenerateButton onClick={generatePrediction} loading={predLoading} hasGenerated={hasGenerated} accent="green" />}
+      >
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <PredStatCard label="GOALS" predicted={prediction.goals_predicted} low={prediction.goals_low} high={prediction.goals_high} revealed={hasGenerated} accent="green" index={0} />
+          <PredStatCard label="ASSISTS" predicted={prediction.assists_predicted} low={prediction.assists_low} high={prediction.assists_high} revealed={hasGenerated} accent="green" index={1} />
+          <PredStatCard label="GOAL INVOLVEMENT" predicted={prediction.involvement_predicted} revealed={hasGenerated} accent="green" index={2} />
         </div>
-        <div className="p-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="bg-gray-950 rounded-lg p-4 border border-gray-800">
-              <div className="text-xs text-gray-500 mb-1">GOALS</div>
-              <div className="text-3xl text-white font-bold">{prediction.goals_predicted}</div>
-              {hasGenerated && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Range: <span className="text-green-400">{prediction.goals_low} – {prediction.goals_high}</span>
-                </div>
-              )}
-            </div>
-            <div className="bg-gray-950 rounded-lg p-4 border border-gray-800">
-              <div className="text-xs text-gray-500 mb-1">ASSISTS</div>
-              <div className="text-3xl text-white font-bold">{prediction.assists_predicted}</div>
-              {hasGenerated && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Range: <span className="text-green-400">{prediction.assists_low} – {prediction.assists_high}</span>
-                </div>
-              )}
-            </div>
-            <div className="bg-gray-950 rounded-lg p-4 border border-gray-800">
-              <div className="text-xs text-gray-500 mb-1">GOAL INVOLVEMENT</div>
-              <div className="text-3xl text-green-400 font-bold">{prediction.involvement_predicted}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      </SectionCard>
 
       {/* Reasoning */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800">
-        <div className="p-4 border-b border-gray-800 flex items-center gap-2">
-          <TrendingUp className="size-5 text-green-500" />
-          <h3 className="text-lg text-white">Reason for Prediction</h3>
-        </div>
-        <div className="p-6">
-          <textarea
-            value={predReason}
-            readOnly
-            rows={4}
-            className="w-full bg-gray-950 border border-gray-800 rounded-lg p-4 text-white focus:outline-none resize-none"
-          />
-          <div className="mt-4 text-sm text-gray-400">
-            Tip: Consider the opponent's defensive record, home/away form, and the player's scoring consistency.
-          </div>
-        </div>
-      </div>
+      <ReasoningCard
+        title="Reason for Prediction"
+        reason={predReason}
+        tip="Consider the opponent's defensive record, home/away form, and the player's scoring consistency."
+        accent="green"
+      />
     </div>
   );
 }

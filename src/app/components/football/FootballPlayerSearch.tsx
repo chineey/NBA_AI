@@ -1,5 +1,10 @@
 import { useState } from 'react';
 import { Search, Loader2, Target } from 'lucide-react';
+import { Card } from '@/app/components/ui/card';
+import { Input } from '@/app/components/ui/input';
+import { Button } from '@/app/components/ui/button';
+import { Badge } from '@/app/components/ui/badge';
+import { Skeleton } from '@/app/components/ui/skeleton';
 
 export type PlayerSearchResult = {
   id: number;
@@ -18,23 +23,23 @@ export type PlayerSearchResult = {
 };
 
 const LEAGUE_COLORS: Record<string, string> = {
-  PL:  'bg-purple-500/20 text-purple-400',
-  PD:  'bg-red-500/20    text-red-400',
-  BL1: 'bg-yellow-500/20 text-yellow-400',
-  SA:  'bg-blue-500/20   text-blue-400',
-  FL1: 'bg-cyan-500/20   text-cyan-400',
-  CL:  'bg-indigo-500/20 text-indigo-400',
-  DED: 'bg-orange-500/20 text-orange-400',
-  PPL: 'bg-emerald-500/20 text-emerald-400',
-  ELC: 'bg-pink-500/20   text-pink-400',
-  BSA: 'bg-teal-500/20   text-teal-400',
+  PL:  'bg-purple-500/15 text-purple-300',
+  PD:  'bg-red-500/15    text-red-300',
+  BL1: 'bg-yellow-500/15 text-yellow-300',
+  SA:  'bg-blue-500/15   text-blue-300',
+  FL1: 'bg-cyan-500/15   text-cyan-300',
+  CL:  'bg-indigo-500/15 text-indigo-300',
+  DED: 'bg-orange-500/15 text-orange-300',
+  PPL: 'bg-emerald-500/15 text-emerald-300',
+  ELC: 'bg-pink-500/15   text-pink-300',
+  BSA: 'bg-teal-500/15   text-teal-300',
 };
 
 const POS_COLOR: Record<string, string> = {
-  Goalkeeper: 'bg-amber-500/20 text-amber-400',
-  Defence:    'bg-blue-500/20  text-blue-400',
-  Midfield:   'bg-green-500/20 text-green-400',
-  Offence:    'bg-red-500/20   text-red-400',
+  Goalkeeper: 'bg-amber-500/15 text-amber-300',
+  Defence:    'bg-blue-500/15  text-blue-300',
+  Midfield:   'bg-green-500/15 text-green-300',
+  Offence:    'bg-red-500/15   text-red-300',
 };
 
 type Props = {
@@ -70,33 +75,31 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
   };
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 flex flex-col" style={{ maxHeight: 'calc(100vh - 14rem)' }}>
+    <Card className="gap-0 overflow-hidden border-white/[0.07] bg-gray-900/80 py-0 flex flex-col" style={{ maxHeight: 'calc(100vh - 14rem)' }}>
       {/* Search bar */}
-      <div className="p-3 border-b border-gray-800">
+      <div className="p-3 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
-          <input
+          <Input
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
             placeholder="Search players (press Enter)…"
-            className="flex-1 bg-gray-800 text-white rounded-lg px-3 py-2 text-sm border border-gray-700 focus:outline-none focus:border-green-500 placeholder:text-gray-500"
+            className="flex-1 h-auto rounded-lg border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus-visible:ring-green-500/40 focus-visible:border-green-500/50"
           />
-          <button
+          <Button
             onClick={handleSearch}
             disabled={loading}
-            className="p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 shrink-0"
+            size="icon"
+            className="shrink-0 rounded-lg bg-green-600 hover:bg-green-700"
           >
-            {loading
-              ? <Loader2 className="size-4 animate-spin" />
-              : <Search className="size-4" />
-            }
-          </button>
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+          </Button>
         </div>
       </div>
 
       {/* Results list */}
-      <div className="flex-1 overflow-y-auto divide-y divide-gray-800/60">
+      <div className="flex-1 overflow-y-auto divide-y divide-white/[0.05]">
         {!searched ? (
           <div className="flex flex-col items-center justify-center gap-4 py-12 px-4 text-center">
             <Target className="size-10 text-gray-700" />
@@ -106,8 +109,10 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
             </p>
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-6 text-green-500 animate-spin" />
+          <div className="space-y-1 p-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+            ))}
           </div>
         ) : notFound ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 px-4 text-center">
@@ -121,12 +126,12 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
               <button
                 key={r.id}
                 onClick={() => onSelectPlayer(r)}
-                className={`w-full p-3 flex items-center gap-3 transition-colors text-left hover:bg-gray-800 ${
+                className={`w-full p-3 flex items-center gap-3 transition-colors text-left hover:bg-white/[0.03] ${
                   isSelected ? 'bg-green-500/10 border-l-2 border-green-500 pl-2.5' : ''
                 }`}
               >
                 {/* Team crest */}
-                <div className="shrink-0 size-9 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden">
+                <div className="shrink-0 size-9 rounded-full bg-gray-800 border border-white/[0.08] flex items-center justify-center overflow-hidden">
                   {r.teamCrest ? (
                     <img
                       src={r.teamCrest}
@@ -144,13 +149,13 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
                   <div className="text-white text-sm font-medium truncate">{r.name}</div>
                   <div className="text-gray-500 text-xs mt-0.5 truncate">{r.teamName}</div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${LEAGUE_COLORS[r.competitionCode] ?? 'bg-gray-700 text-gray-400'}`}>
+                    <Badge variant="outline" className={`border-transparent px-1.5 py-0 text-[10px] ${LEAGUE_COLORS[r.competitionCode] ?? 'bg-gray-700 text-gray-400'}`}>
                       {r.competitionCode}
-                    </span>
+                    </Badge>
                     {r.position && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${POS_COLOR[r.position] ?? 'bg-gray-700 text-gray-400'}`}>
+                      <Badge variant="outline" className={`border-transparent px-1.5 py-0 text-[10px] ${POS_COLOR[r.position] ?? 'bg-gray-700 text-gray-400'}`}>
                         {r.position === 'Goalkeeper' ? 'GK' : r.position === 'Defence' ? 'DEF' : r.position === 'Midfield' ? 'MID' : r.position === 'Offence' ? 'FWD' : r.position}
-                      </span>
+                      </Badge>
                     )}
                   </div>
                 </div>
@@ -166,6 +171,6 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
           })
         )}
       </div>
-    </div>
+    </Card>
   );
 }

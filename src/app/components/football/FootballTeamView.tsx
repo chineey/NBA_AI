@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Loader2, Trophy, TrendingUp, Sparkles, Users } from 'lucide-react';
+import { Trophy, Users } from 'lucide-react';
+import { toast } from 'sonner';
+import { BackButton } from '../BackButton';
+import { NextGameBadge, PredStatCard, ReasoningCard, SectionCard, GenerateButton } from '../PredictionShared';
+import { Card } from '@/app/components/ui/card';
+import { Badge } from '@/app/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/app/components/ui/avatar';
+import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/app/components/ui/table';
+import { Skeleton } from '@/app/components/ui/skeleton';
 
 export type SquadPlayer = {
   id: number;
@@ -89,23 +98,23 @@ function PlayerAvatar({ player, size = 'sm' }: { player: SquadPlayer; size?: 'sm
   const dim = size === 'md' ? 'size-12 text-sm' : 'size-9 text-xs';
   const initials = player.name.split(' ').map(w => w[0]).slice(0, 2).join('');
   return (
-    <div className={`${dim} ${cls} rounded-full flex items-center justify-center border font-semibold shrink-0`}>
-      {initials}
-    </div>
+    <Avatar className={dim}>
+      <AvatarFallback className={`border font-semibold ${cls}`}>{initials}</AvatarFallback>
+    </Avatar>
   );
 }
 
-function StatCard({
-  label, value, sub,
-}: { label: string; value: string | number; sub?: string }) {
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
-    <div className="bg-gray-950 rounded-lg p-3 border border-gray-800 text-center">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+    <Card className="gap-1 border-white/[0.06] bg-gray-950/80 p-3 text-center">
+      <div className="text-xs text-gray-500">{label}</div>
       <div className="text-2xl text-white font-semibold">{value}</div>
-      {sub && <div className="text-xs text-green-400 mt-0.5">{sub}</div>}
-    </div>
+      {sub && <div className="text-xs text-green-400">{sub}</div>}
+    </Card>
   );
 }
+
+const HEAD_CLS = 'text-[11px] font-semibold tracking-wider text-gray-500 whitespace-nowrap h-10 px-3';
 
 type Props = {
   team: { id: number; name: string; shortName: string; tla: string; crest: string; competition: { code: string; name: string } };
@@ -140,13 +149,13 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
     fetch(`${BASE}/football/teams/${team.id}/squad`)
       .then(r => r.json())
       .then(setSquadData)
-      .catch(console.error)
+      .catch(e => { console.error(e); toast.error('Could not load squad', { description: 'Please try again in a moment.' }); })
       .finally(() => setLoadingSquad(false));
 
     fetch(`${BASE}/football/teams/${team.id}?competition_code=${competitionCode}`)
       .then(r => r.json())
       .then(setTeamStats)
-      .catch(console.error)
+      .catch(e => { console.error(e); toast.error('Could not load team stats', { description: 'Please try again in a moment.' }); })
       .finally(() => setLoadingStats(false));
   }, [team.id]);
 
@@ -179,6 +188,7 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
     } catch (e) {
       console.error(e);
       setPredReason('Failed to generate prediction. Please try again.');
+      toast.error('Prediction failed', { description: 'Please try again in a moment.' });
     } finally {
       setPredLoading(false);
     }
@@ -189,76 +199,73 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
     p => posFilter === 'All' || p.position === posFilter
   ) ?? [];
 
+  const nextGame = teamStats?.nextMatch
+    ? { gameDate: teamStats.nextMatch.date, opponent: teamStats.nextMatch.opponent, homeAway: teamStats.nextMatch.homeAway, matchup: `vs ${teamStats.nextMatch.opponent}` }
+    : null;
+
   return (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-400">
+    <div className="space-y-4 animate-fade-up">
+      <BackButton onClick={onBack} accent="green" />
+
       {/* Header */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-          >
-            <ArrowLeft className="size-5" />
-          </button>
-          {team.crest ? (
-            <img src={team.crest} alt={team.name} className="size-14 object-contain"
-              onError={e => { (e.target as HTMLImageElement).style.opacity = '0.2'; }} />
-          ) : (
-            <div className="size-14 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20">
-              <span className="text-green-400 text-sm font-bold">{team.tla}</span>
-            </div>
-          )}
-          <div>
-            <h2 className="text-2xl text-white font-bold">{team.name}</h2>
-            {teamStats && (
-              <p className="text-gray-400 text-sm mt-0.5">
-                {teamStats.venue && `${teamStats.venue} · `}
-                {teamStats.seasonStats.totalMatches} matches analysed
-              </p>
-            )}
-          </div>
-          {teamStats?.nextMatch && (
-            <div className="ml-auto px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg text-right">
-              <div className="text-xs text-green-400 mb-0.5">Next Match</div>
-              <div className="text-white font-medium text-sm">vs {teamStats.nextMatch.opponent}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {teamStats.nextMatch.date} · {teamStats.nextMatch.homeAway}
+      <Card className="relative gap-0 overflow-hidden border-white/[0.07] bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/60 p-6">
+        <div aria-hidden className="absolute -top-16 -right-10 w-56 h-56 bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {team.crest ? (
+              <img src={team.crest} alt={team.name} className="size-14 object-contain drop-shadow-xl"
+                onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }} />
+            ) : (
+              <div className="size-14 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/25">
+                <span className="text-green-400 text-sm font-bold">{team.tla}</span>
               </div>
+            )}
+            <div>
+              <h2 className="font-display text-2xl text-white font-bold tracking-tight">{team.name}</h2>
+              {teamStats && (
+                <p className="text-gray-400 text-sm mt-0.5">
+                  {teamStats.venue && `${teamStats.venue} · `}
+                  {teamStats.seasonStats.totalMatches} matches analysed
+                </p>
+              )}
             </div>
-          )}
+          </div>
+          {nextGame && <NextGameBadge nextGame={nextGame} accent="green" />}
         </div>
-      </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Squad panel */}
         <div className="space-y-4">
-          <div className="bg-gray-900 rounded-xl border border-gray-800">
-            <div className="p-4 border-b border-gray-800 flex items-center gap-2">
+          <Card className="gap-0 overflow-hidden border-white/[0.07] bg-gray-900/80 py-0">
+            <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
               <Users className="size-4 text-green-500" />
               <span className="text-gray-400 text-sm font-bold tracking-wider">SQUAD</span>
             </div>
 
             {/* Position filter tabs */}
-            <div className="flex gap-1 p-2 border-b border-gray-800 flex-wrap">
-              {positions.map(pos => (
-                <button
-                  key={pos}
-                  onClick={() => setPosFilter(pos)}
-                  className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                    posFilter === pos
-                      ? 'bg-green-500 text-white'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                  }`}
-                >
-                  {pos === 'Offence' ? 'FWD' : pos === 'Goalkeeper' ? 'GK' : pos === 'Defence' ? 'DEF' : pos === 'Midfield' ? 'MID' : pos}
-                </button>
-              ))}
+            <div className="p-2 border-b border-white/[0.06]">
+              <Tabs value={posFilter} onValueChange={setPosFilter}>
+                <TabsList className="h-auto flex-wrap justify-start rounded-lg bg-transparent p-0 gap-1">
+                  {positions.map(pos => (
+                    <TabsTrigger
+                      key={pos}
+                      value={pos}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-gray-400 data-[state=active]:bg-green-500 data-[state=active]:text-white data-[state=active]:border-transparent"
+                    >
+                      {pos === 'Offence' ? 'FWD' : pos === 'Goalkeeper' ? 'GK' : pos === 'Defence' ? 'DEF' : pos === 'Midfield' ? 'MID' : pos}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             </div>
 
-            <div className="divide-y divide-gray-800 max-h-[calc(100vh-22rem)] overflow-y-auto">
+            <div className="divide-y divide-white/[0.05] max-h-[calc(100vh-22rem)] overflow-y-auto">
               {loadingSquad ? (
-                <div className="flex items-center justify-center p-8">
-                  <Loader2 className="size-6 text-green-500 animate-spin" />
+                <div className="space-y-1 p-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-14 rounded-lg" style={{ animationDelay: `${i * 50}ms` }} />
+                  ))}
                 </div>
               ) : filteredSquad.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 text-sm">No players found</div>
@@ -267,15 +274,15 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
                   <button
                     key={player.id}
                     onClick={() => onSelectPlayer(player, team.name)}
-                    className="w-full p-3 flex items-center gap-3 hover:bg-gray-800 transition-colors text-left"
+                    className="w-full p-3 flex items-center gap-3 hover:bg-white/[0.03] transition-colors text-left"
                   >
                     <PlayerAvatar player={player} />
                     <div className="min-w-0 flex-1">
                       <div className="text-white text-sm font-medium truncate">{player.name}</div>
                       <div className="text-gray-500 text-xs mt-0.5 flex items-center gap-2">
-                        <span className={`px-1.5 py-0.5 rounded text-xs border ${POS_COLOR[player.position] || 'bg-gray-700 text-gray-400 border-gray-600'}`}>
+                        <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${POS_COLOR[player.position] || 'bg-gray-700 text-gray-400 border-gray-600'}`}>
                           {POS_ABBR[player.position] ?? player.position}
-                        </span>
+                        </Badge>
                         {player.nationality && <span>{player.nationality}</span>}
                         {player.age !== null && <span>{player.age} yrs</span>}
                       </div>
@@ -284,25 +291,26 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
                 ))
               )}
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Stats + Prediction panel */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Season stats */}
           {loadingStats ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="size-6 text-green-500 animate-spin" />
+            <div className="space-y-4">
+              <Skeleton className="h-24 rounded-2xl" />
+              <Skeleton className="h-64 rounded-2xl" />
             </div>
           ) : teamStats ? (
             <>
-              <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-                <div className="flex items-center justify-between mb-3">
+              {/* Season stats */}
+              <Card className="gap-3 border-white/[0.07] bg-gray-900/80 p-4">
+                <div className="flex items-center justify-between">
                   <h3 className="text-sm text-gray-400 font-bold tracking-wider">SEASON STATS</h3>
                   {teamStats.seasonStats.position && (
-                    <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
+                    <Badge variant="outline" className="rounded-full border-green-500/25 bg-green-500/10 text-xs text-green-400">
                       #{teamStats.seasonStats.position} in table
-                    </span>
+                    </Badge>
                   )}
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -317,30 +325,32 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
                   <StatCard label="CS" value={teamStats.seasonStats.cleanSheets} sub="clean sheets" />
                   <StatCard label="GP" value={teamStats.seasonStats.totalMatches} sub="played" />
                 </div>
-              </div>
+              </Card>
 
               {/* Recent matches table */}
-              <div className="bg-gray-900 rounded-xl border border-gray-800">
-                <div className="p-4 border-b border-gray-800">
-                  <h3 className="text-lg text-white">Recent Matches</h3>
-                </div>
+              <SectionCard
+                icon={<Users className="size-4 text-green-400" />}
+                title="Recent Matches"
+                accent="green"
+                contentClassName="p-0"
+              >
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-950">
-                      <tr>
-                        <th className="px-3 py-3 text-left text-xs text-gray-400 sticky left-0 bg-gray-950">DATE</th>
-                        <th className="px-3 py-3 text-left text-xs text-gray-400">OPPONENT</th>
-                        <th className="px-3 py-3 text-center text-xs text-gray-400">H/A</th>
-                        <th className="px-3 py-3 text-center text-xs text-gray-400">SCORE</th>
-                        <th className="px-3 py-3 text-center text-xs text-gray-400">RES</th>
-                        <th className="px-3 py-3 text-left text-xs text-gray-400">COMPETITION</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800">
+                  <Table>
+                    <TableHeader className="bg-gray-950/80">
+                      <TableRow className="hover:bg-transparent border-white/[0.06]">
+                        <TableHead className={`${HEAD_CLS} sticky left-0 bg-gray-950`}>DATE</TableHead>
+                        <TableHead className={HEAD_CLS}>OPPONENT</TableHead>
+                        <TableHead className={`${HEAD_CLS} text-center`}>H/A</TableHead>
+                        <TableHead className={`${HEAD_CLS} text-center`}>SCORE</TableHead>
+                        <TableHead className={`${HEAD_CLS} text-center`}>RES</TableHead>
+                        <TableHead className={HEAD_CLS}>COMPETITION</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-white/[0.04]">
                       {teamStats.recentMatches.map((m, i) => (
-                        <tr key={i} className="hover:bg-gray-800/50 transition-colors">
-                          <td className="px-3 py-3 text-white sticky left-0 bg-gray-900 hover:bg-gray-800/50">{m.date}</td>
-                          <td className="px-3 py-3">
+                        <TableRow key={i} className="border-white/[0.04] hover:bg-white/[0.03]">
+                          <TableCell className="px-3 py-3 text-white sticky left-0 bg-gray-900 whitespace-nowrap">{m.date}</TableCell>
+                          <TableCell className="px-3 py-3">
                             <div className="flex items-center gap-2">
                               {m.opponentCrest && (
                                 <img src={m.opponentCrest} alt="" className="size-5 object-contain"
@@ -348,120 +358,94 @@ export function FootballTeamView({ team, onSelectPlayer, onBack }: Props) {
                               )}
                               <span className="text-gray-300 whitespace-nowrap">{m.opponent}</span>
                             </div>
-                          </td>
-                          <td className="px-3 py-3 text-center">
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${m.homeAway === 'HOME' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
+                          </TableCell>
+                          <TableCell className="px-3 py-3 text-center">
+                            <Badge className={`border-transparent text-xs px-1.5 py-0.5 ${m.homeAway === 'HOME' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
                               {m.homeAway === 'HOME' ? 'H' : 'A'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-center text-white font-medium">{m.score}</td>
-                          <td className="px-3 py-3 text-center">
-                            <span className={`px-2 py-0.5 rounded text-xs ${
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-3 py-3 text-center text-white font-medium tabular-nums">{m.score}</TableCell>
+                          <TableCell className="px-3 py-3 text-center">
+                            <Badge className={`border-transparent text-xs px-2 py-0.5 ${
                               m.result === 'W' ? 'bg-green-500/20 text-green-400' :
                               m.result === 'D' ? 'bg-yellow-500/20 text-yellow-400' :
                               'bg-red-500/20 text-red-400'
                             }`}>
                               {m.result}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-gray-500 text-xs">{m.competition}</td>
-                        </tr>
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">{m.competition}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
+              </SectionCard>
 
               {/* AI Prediction */}
-              <div className="bg-gray-900 rounded-xl border border-gray-800">
-                <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="size-5 text-green-500" />
-                    <div>
-                      <h3 className="text-lg text-white">Predicted Stats for Next Match</h3>
-                      {hasGenerated && (
-                        <p className="text-xs text-gray-500 mt-0.5">Range shows low – high confidence interval</p>
-                      )}
+              <SectionCard
+                icon={<Trophy className="size-4 text-green-400" />}
+                title="Predicted Stats for Next Match"
+                subtitle={hasGenerated ? 'Range shows low – high confidence interval' : undefined}
+                accent="green"
+                action={<GenerateButton onClick={generatePrediction} loading={predLoading} hasGenerated={hasGenerated} accent="green" />}
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <PredStatCard
+                    label="GOALS SCORED"
+                    predicted={prediction.goals_for_predicted}
+                    low={prediction.goals_for_low}
+                    high={prediction.goals_for_high}
+                    revealed={hasGenerated}
+                    accent="green"
+                    index={0}
+                  />
+                  <PredStatCard
+                    label="GOALS CONCEDED"
+                    predicted={prediction.goals_against_predicted}
+                    low={prediction.goals_against_low}
+                    high={prediction.goals_against_high}
+                    revealed={hasGenerated}
+                    accent="green"
+                    index={1}
+                  />
+                  <Card className="gap-0 border-white/[0.07] bg-gradient-to-b from-gray-950 to-gray-900/40 p-3.5">
+                    <div className="text-[11px] text-gray-500 font-semibold tracking-widest mb-1.5">CLEAN SHEET %</div>
+                    <div className="text-2xl text-white font-display font-bold">
+                      {hasGenerated ? `${Math.round(prediction.clean_sheet_probability * 100)}%` : '—'}
                     </div>
-                  </div>
-                  <button
-                    onClick={generatePrediction}
-                    disabled={predLoading}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    {predLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                    {hasGenerated ? 'Regenerate' : 'Generate AI Prediction'}
-                  </button>
-                </div>
-                <div className="p-5">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
-                      <div className="text-xs text-gray-500 mb-1">GOALS SCORED</div>
-                      <div className="text-2xl text-white font-semibold">{prediction.goals_for_predicted}</div>
-                      {hasGenerated && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Range: <span className="text-green-400">{prediction.goals_for_low} – {prediction.goals_for_high}</span>
+                  </Card>
+                  <Card className="gap-0 border-white/[0.07] bg-gradient-to-b from-gray-950 to-gray-900/40 p-3.5">
+                    <div className="text-[11px] text-gray-500 font-semibold tracking-widest mb-2">RESULT ODDS</div>
+                    {hasGenerated ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-green-400">Win</span>
+                          <span className="text-white tabular-nums">{Math.round(prediction.win_probability * 100)}%</span>
                         </div>
-                      )}
-                    </div>
-                    <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
-                      <div className="text-xs text-gray-500 mb-1">GOALS CONCEDED</div>
-                      <div className="text-2xl text-white font-semibold">{prediction.goals_against_predicted}</div>
-                      {hasGenerated && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Range: <span className="text-green-400">{prediction.goals_against_low} – {prediction.goals_against_high}</span>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-yellow-400">Draw</span>
+                          <span className="text-white tabular-nums">{Math.round(prediction.draw_probability * 100)}%</span>
                         </div>
-                      )}
-                    </div>
-                    <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
-                      <div className="text-xs text-gray-500 mb-1">CLEAN SHEET %</div>
-                      <div className="text-2xl text-white font-semibold">
-                        {hasGenerated ? `${Math.round(prediction.clean_sheet_probability * 100)}%` : '—'}
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-red-400">Loss</span>
+                          <span className="text-white tabular-nums">{Math.round(prediction.loss_probability * 100)}%</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
-                      <div className="text-xs text-gray-500 mb-2">RESULT ODDS</div>
-                      {hasGenerated ? (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-green-400">Win</span>
-                            <span className="text-white">{Math.round(prediction.win_probability * 100)}%</span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-yellow-400">Draw</span>
-                            <span className="text-white">{Math.round(prediction.draw_probability * 100)}%</span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-red-400">Loss</span>
-                            <span className="text-white">{Math.round(prediction.loss_probability * 100)}%</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-gray-600 text-sm">—</div>
-                      )}
-                    </div>
-                  </div>
+                    ) : (
+                      <div className="text-gray-600 text-sm">—</div>
+                    )}
+                  </Card>
                 </div>
-              </div>
+              </SectionCard>
 
               {/* Reasoning */}
-              <div className="bg-gray-900 rounded-xl border border-gray-800">
-                <div className="p-4 border-b border-gray-800 flex items-center gap-2">
-                  <TrendingUp className="size-5 text-green-500" />
-                  <h3 className="text-lg text-white">Reason for Prediction</h3>
-                </div>
-                <div className="p-5">
-                  <textarea
-                    value={predReason}
-                    readOnly
-                    rows={4}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg p-4 text-white focus:outline-none resize-none"
-                  />
-                  <div className="mt-3 text-sm text-gray-400">
-                    Tip: Consider recent form, home advantage, head-to-head record, and key player availability.
-                  </div>
-                </div>
-              </div>
+              <ReasoningCard
+                title="Reason for Prediction"
+                reason={predReason}
+                tip="Consider recent form, home advantage, head-to-head record, and key player availability."
+                accent="green"
+              />
             </>
           ) : null}
         </div>
