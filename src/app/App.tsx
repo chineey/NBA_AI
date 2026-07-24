@@ -7,7 +7,7 @@ import { StatPrediction } from '@/app/components/StatPrediction';
 import { TeamsGrid } from '@/app/components/TeamsGrid';
 import { TeamRoster, type RosterPlayer } from '@/app/components/TeamRoster';
 import { TeamPrediction } from '@/app/components/TeamPrediction';
-import { FootballApp } from '@/app/components/football/FootballApp';
+import { FootballApp, type FootballSection } from '@/app/components/football/FootballApp';
 import { BackButton } from '@/app/components/BackButton';
 import { AppSidebar } from '@/app/components/AppSidebar';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/app/components/ui/sidebar';
@@ -41,6 +41,7 @@ export default function App() {
   const { user, signOut, loading: authLoading } = useAuth();
   const [sport, setSport] = useState<Sport>('nba');
   const [mode, setMode] = useState<Mode>('players');
+  const [footballSection, setFootballSection] = useState<FootballSection>('browse');
 
   // Players mode
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -258,6 +259,8 @@ export default function App() {
         setSport={setSport}
         mode={mode}
         switchMode={switchMode}
+        footballSection={footballSection}
+        setFootballSection={setFootballSection}
         userEmail={user?.email}
         onSignOut={signOut}
       />
@@ -270,7 +273,13 @@ export default function App() {
               <SidebarTrigger className="text-gray-400 hover:text-white hover:bg-white/[0.06]" />
               <Separator orientation="vertical" className="h-5 bg-white/[0.08]" />
               <h1 className="font-display text-base sm:text-lg text-white font-bold tracking-tight leading-none truncate">
-                {isNba ? 'NBA Analysis' : 'Football Analysis'}
+                {isNba
+                  ? 'NBA Analysis'
+                  : footballSection === 'scorers'
+                  ? 'Top Scorers'
+                  : footballSection === 'assists'
+                  ? 'Top Assists'
+                  : 'Football Analysis'}
               </h1>
             </div>
 
@@ -294,7 +303,7 @@ export default function App() {
         {/* Main Content */}
         <div className="relative px-4 sm:px-6 py-8">
           {sport === 'football' ? (
-            <FootballApp />
+            <FootballApp section={footballSection} />
           ) : (
             mode === 'players' ? renderPlayersContent() : renderTeamsContent()
           )}

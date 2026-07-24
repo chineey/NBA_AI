@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown } from 'lucide-react';
+import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown, Grid3x3, Target, Zap } from 'lucide-react';
+import type { FootballSection } from '@/app/components/football/FootballApp';
 import {
   Sidebar,
   SidebarContent,
@@ -41,11 +42,13 @@ type Props = {
   setSport: (s: Sport) => void;
   mode: Mode;
   switchMode: (m: Mode) => void;
+  footballSection: FootballSection;
+  setFootballSection: (s: FootballSection) => void;
   userEmail?: string | null;
   onSignOut: () => void;
 };
 
-export function AppSidebar({ sport, setSport, mode, switchMode, userEmail, onSignOut }: Props) {
+export function AppSidebar({ sport, setSport, mode, switchMode, footballSection, setFootballSection, userEmail, onSignOut }: Props) {
   const isNba = sport === 'nba';
   const initial = (userEmail ?? '?').charAt(0).toUpperCase();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -133,6 +136,49 @@ export function AppSidebar({ sport, setSport, mode, switchMode, userEmail, onSig
                   >
                     <Shield />
                     <span>Teams</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {!isNba && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Football</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={footballSection === 'browse'}
+                    onClick={() => setFootballSection('browse')}
+                    tooltip="Browse"
+                    className="data-[active=true]:bg-white/10 data-[active=true]:text-white"
+                  >
+                    <Grid3x3 />
+                    <span>Browse</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={footballSection === 'scorers'}
+                    onClick={() => setFootballSection('scorers')}
+                    tooltip="Top Scorers"
+                    className="data-[active=true]:bg-white/10 data-[active=true]:text-white"
+                  >
+                    <Target />
+                    <span>Top Scorers</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={footballSection === 'assists'}
+                    onClick={() => setFootballSection('assists')}
+                    tooltip="Top Assists"
+                    className="data-[active=true]:bg-white/10 data-[active=true]:text-white"
+                  >
+                    <Zap />
+                    <span>Top Assists</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

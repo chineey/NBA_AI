@@ -345,10 +345,16 @@ def football_reload():
 
 @football_router.get("/football/competitions")
 def list_competitions():
+    # Player-level scorer/assist data is only ingested for some competitions
+    # (football-data.org's free tier rate-limits how many football_refresh.py
+    # can pull per run) -- flag which ones so the frontend can default its
+    # stat-leaders picker to a competition that actually has rows.
+    stat_codes = {r.get("competition_code") for r in _fb_player_season_stats}
     return [
         {
             "id": c.get("competition_id"), "code": c["code"], "name": c.get("name", ""),
             "emblem": c.get("emblem") or "", "area": c.get("area_name", ""),
+            "hasPlayerStats": c["code"] in stat_codes,
         }
         for c in sorted(_fb_competitions.values(), key=lambda c: c.get("name", ""))
     ]
@@ -437,6 +443,49 @@ def search_players(name: str = Query(default="")):
 
     out.sort(key=lambda p: (-p["goals"], -p["assists"], p["name"]))
     return out[:50]
+
+
+@football_router.get("/football/competitions/{code}/leaders")
+def competition_leaders(code: str, stat: str = Query(default="goals"), limit: int = Query(default=50, le=100)):
+    """Stat-leader board for a competition (top scorers / assists / goal
+    involvement), with per-game ratios computed the same way as
+    /football/player/{id}'s seasonStats so the two views stay consistent."""
+    sort_keys = {
+        "goals": lambda p: (-p["goals"], -p["assists"], -p["playedMatches"]),
+        "assists": lambda p: (-p["assists"], -p["goals"], -p["playedMatches"]),
+        "involvement": lambda p: (-p["involvement"], -p["playedMatches"]),
+    }
+    if stat not in sort_keys:
+        raise HTTPException(400, f"stat must be one of: {', '.join(sort_keys)}")
+
+    code = code.upper()
+    out = []
+    for r in _fb_player_season_stats:
+        if r.get("competition_code") != code:
+            continue
+        player = _fb_players.get(r["player_id"])
+        if not player:
+            continue
+        team = _fb_teams.get(r.get("team_id"))
+        goals = r.get("goals", 0) or 0
+        assists = r.get("assists", 0) or 0
+        played = r.get("played_matches", 0) or 0
+        out.append({
+            "playerId": player["id"], "name": player.get("name", ""),
+            "position": player.get("position", ""), "nationality": player.get("nationality", ""),
+            "teamId": r.get("team_id"), "teamName": team.get("name", "") if team else "",
+            "teamCrest": team.get("crest", "") if team else "",
+            "competitionCode": code,
+            "goals": goals, "assists": assists, "playedMatches": played,
+            "penalties": r.get("penalties"),
+            "involvement": goals + assists,
+            "goalsPerGame": round(goals / played, 2) if played else 0.0,
+            "assistsPerGame": round(assists / played, 2) if played else 0.0,
+            "involvementPerGame": round((goals + assists) / played, 2) if played else 0.0,
+        })
+
+    out.sort(key=sort_keys[stat])
+    return out[:limit]
 
 
 @football_router.get("/football/teams/{team_id}/squad")

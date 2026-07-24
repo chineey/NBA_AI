@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Grid3x3, Trophy } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { CompetitionsGrid } from './CompetitionsGrid';
@@ -7,8 +7,11 @@ import { FootballAllTeamsGrid, type TeamEntry } from './FootballAllTeamsGrid';
 import { FootballTeamView, type SquadPlayer } from './FootballTeamView';
 import { FootballPlayerView } from './FootballPlayerView';
 import { FootballPlayerSearch, type PlayerSearchResult } from './FootballPlayerSearch';
+import { FootballLeaders, type LeaderEntry } from './FootballLeaders';
 
-type View = 'browse' | 'competition-teams' | 'team' | 'player';
+export type FootballSection = 'browse' | 'scorers' | 'assists';
+
+type View = 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders';
 type BrowseMode = 'competitions' | 'all-teams';
 
 type SelectedTeam = {
@@ -21,7 +24,11 @@ type SelectedPlayer = {
   initialName: string; initialPosition: string; backLabel?: string;
 };
 
-export function FootballApp() {
+type Props = {
+  section: FootballSection;
+};
+
+export function FootballApp({ section }: Props) {
   const [view, setView] = useState<View>('browse');
   const [browseMode, setBrowseMode] = useState<BrowseMode>('competitions');
 
@@ -32,6 +39,15 @@ export function FootballApp() {
   const [selectedTeam, setSelectedTeam] = useState<SelectedTeam | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<SelectedPlayer | null>(null);
   const [returnView, setReturnView] = useState<View>('browse');
+
+  const leaderStat: 'goals' | 'assists' = section === 'assists' ? 'assists' : 'goals';
+
+  // Sidebar-driven navigation: switching section jumps to that top-level view.
+  useEffect(() => {
+    setSelectedTeam(null);
+    setSelectedPlayer(null);
+    setView(section === 'browse' ? 'browse' : 'leaders');
+  }, [section]);
 
   const handleSelectCompetition = (code: string, name: string) => {
     setCompetitionCode(code);
@@ -79,6 +95,20 @@ export function FootballApp() {
     setView('player');
   };
 
+  const handleSelectPlayerFromLeaders = (result: LeaderEntry) => {
+    setSelectedPlayer({
+      playerId: result.playerId,
+      teamId: result.teamId,
+      teamName: result.teamName,
+      competitionCode: result.competitionCode,
+      initialName: result.name,
+      initialPosition: result.position,
+      backLabel: `Back to ${leaderStat === 'goals' ? 'Top Scorers' : 'Top Assists'}`,
+    });
+    setReturnView('leaders');
+    setView('player');
+  };
+
   const handleBackFromTeam = () => {
     setSelectedTeam(null);
     setView(returnView === 'competition-teams' ? 'competition-teams' : 'browse');
@@ -103,6 +133,10 @@ export function FootballApp() {
           onBack={handleBackFromPlayer}
         />
       );
+    }
+
+    if (view === 'leaders') {
+      return <FootballLeaders stat={leaderStat} onSelectPlayer={handleSelectPlayerFromLeaders} />;
     }
 
     if (view === 'team' && selectedTeam) {
