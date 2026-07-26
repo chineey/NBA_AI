@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json as _json
 import os
+import unicodedata
 from datetime import date
 
 from dotenv import load_dotenv
@@ -177,6 +178,12 @@ except Exception as e:
 
 
 # ── Small helpers ──────────────────────────────────────────────────────────────
+def _fold(s: str) -> str:
+    """Lowercase + strip accents, so a plain-ASCII search query (e.g. "cubarsi")
+    matches names stored with diacritics (e.g. "Cubarsí")."""
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+
+
 def _age_from_dob(dob: str | None) -> int | None:
     if not dob:
         return None
@@ -294,24 +301,6 @@ Then output a JSON object (no other JSON in your reply):
     return grounded_research(prompt, cache_key=key, ttl=FOOTBALL_NEWS_TTL)
 
 
-def _player_news(player_name: str, team_name: str, opponent_name: str, competition_name: str) -> dict | None:
-    prompt = f"""Use Google Search for the latest news (past 7 days) about {player_name}
-of {team_name} ahead of their next {competition_name} match against {opponent_name}.
-
-Look ONLY for factual items a season-stats model cannot see:
-- injury/fitness status, suspensions, or rotation/rest plans
-- role changes (new starter, bench role, set-piece/penalty duties)
-
-Then output a JSON object (no other JSON in your reply):
-{{
-  "player_status": "ACTIVE" | "DOUBTFUL" | "OUT" | "UNKNOWN",
-  "noteworthy": <true only if you found a concrete, dated item above>,
-  "brief": "<2-4 factual sentences with dates; empty string if nothing found>"
-}}"""
-    key = f"footballplayer:{player_name}:{team_name}:{opponent_name}"
-    return grounded_research(prompt, cache_key=key, ttl=FOOTBALL_NEWS_TTL)
-
-
 def _news_section(ctx: dict | None) -> str:
     brief = (ctx or {}).get("brief", "")
     return f"\n--- LATEST NEWS (Google Search; may be incomplete) ---\n{brief.strip() or 'No recent news found.'}\n"
@@ -321,13 +310,6 @@ def _news_section(ctx: dict | None) -> str:
 class FootballTeamPredictionRequest(BaseModel):
     team_id: int
     team_name: str
-    competition_code: str
-
-
-class FootballPlayerPredictionRequest(BaseModel):
-    player_id: int
-    player_name: str
-    team_id: int
     competition_code: str
 
 
@@ -389,9 +371,50 @@ def all_teams():
     return out
 
 
+def _fixture_row(m: dict) -> dict:
+    comp = _fb_competitions.get(m.get("competition_code"))
+    home = _fb_teams.get(m.get("home_team_id"), {}) or {}
+    away = _fb_teams.get(m.get("away_team_id"), {}) or {}
+    finished = m.get("status") == "FINISHED" and m.get("full_time_home") is not None
+    return {
+        "matchId": m["id"], "utcDate": m.get("utc_date") or "", "status": m.get("status", ""),
+        "matchday": m.get("matchday"),
+        "competition": {"code": m.get("competition_code", ""),
+                        "name": comp.get("name", "") if comp else m.get("competition_code", "")},
+        "homeTeam": {"id": home.get("id"), "name": home.get("name", ""), "shortName": _team_short(home),
+                     "crest": home.get("crest", ""), "tla": home.get("tla", "")},
+        "awayTeam": {"id": away.get("id"), "name": away.get("name", ""), "shortName": _team_short(away),
+                     "crest": away.get("crest", ""), "tla": away.get("tla", "")},
+        "score": {"home": m.get("full_time_home"), "away": m.get("full_time_away")} if finished else None,
+    }
+
+
+@football_router.get("/football/fixtures")
+def list_fixtures(
+    competition_code: str = Query(default="ALL"),
+    when: str = Query(default="upcoming"),
+    limit: int = Query(default=100, le=300),
+):
+    """Fixture list for the Fixtures tab -- 'ALL' or a single competition code,
+    'upcoming' (soonest first) or 'results' (most recent finished first)."""
+    if when not in ("upcoming", "results"):
+        raise HTTPException(400, "when must be 'upcoming' or 'results'.")
+    code = competition_code.upper()
+    matches = _fb_matches if code == "ALL" else [m for m in _fb_matches if m.get("competition_code") == code]
+
+    if when == "results":
+        rows = [m for m in matches if m.get("status") == "FINISHED" and m.get("full_time_home") is not None]
+        rows.sort(key=lambda m: m.get("utc_date") or "", reverse=True)
+    else:
+        rows = [m for m in matches if m.get("status") in ("SCHEDULED", "TIMED")]
+        rows.sort(key=lambda m: m.get("utc_date") or "")
+
+    return [_fixture_row(m) for m in rows[:limit]]
+
+
 @football_router.get("/football/players/search")
 def search_players(name: str = Query(default="")):
-    q = name.strip().lower()
+    q = _fold(name.strip())
     if len(q) < 2:
         return []
     seen: set[tuple[int, int | None]] = set()
@@ -399,7 +422,7 @@ def search_players(name: str = Query(default="")):
 
     for r in _fb_player_season_stats:
         player = _fb_players.get(r["player_id"])
-        if not player or q not in player.get("name", "").lower():
+        if not player or q not in _fold(player.get("name", "")):
             continue
         team = _fb_teams.get(r.get("team_id"))
         comp = _fb_competitions.get(r["competition_code"])
@@ -428,7 +451,7 @@ def search_players(name: str = Query(default="")):
             player = _fb_players.get(s["player_id"])
             if not player or (player["id"], team_id) in seen:
                 continue
-            if q not in player.get("name", "").lower():
+            if q not in _fold(player.get("name", "")):
                 continue
             out.append({
                 "id": player["id"], "name": player.get("name", ""),
@@ -713,99 +736,10 @@ def player_detail(player_id: int, team_id: int = Query(...), competition_code: s
     }
 
 
-@football_router.post("/football/predict/player")
-def predict_player(req: FootballPlayerPredictionRequest):
-    player = _fb_players.get(req.player_id)
-    if not player:
-        raise HTTPException(404, "Player not found.")
-    team = _fb_teams.get(req.team_id, {})
-    comp_code = req.competition_code.upper()
-    stats = _fb_player_stats_by_player.get((comp_code, req.player_id))
-    goals = stats.get("goals", 0) if stats else 0
-    assists = stats.get("assists", 0) if stats else 0
-    played = stats.get("played_matches", 0) if stats else 0
-
-    upcoming = _upcoming_for_team(req.team_id)
-    if not upcoming:
-        raise HTTPException(409, "No upcoming match found for this player's team.")
-    nm = upcoming[0]
-    is_home = nm["home_team_id"] == req.team_id
-    opponent_id = nm["away_team_id"] if is_home else nm["home_team_id"]
-    opponent = _fb_teams.get(opponent_id, {})
-    comp = _fb_competitions.get(nm["competition_code"])
-    comp_name = comp.get("name", nm["competition_code"]) if comp else nm["competition_code"]
-
-    opp_standing = _fb_standings.get((nm["competition_code"], opponent_id))
-    comp_standings = [s for (code, _), s in _fb_standings.items() if code == nm["competition_code"]]
-    total_ga = sum(s.get("goals_against", 0) for s in comp_standings)
-    total_played = sum(max(s.get("played_games", 0), 1) for s in comp_standings)
-    league_avg_ga = (total_ga / total_played) if total_played else football_prediction.BASELINE_GOALS
-    if opp_standing and opp_standing.get("played_games") and league_avg_ga:
-        opp_avg_ga = opp_standing.get("goals_against", 0) / opp_standing["played_games"]
-        opponent_defense_factor = opp_avg_ga / league_avg_ga
-    else:
-        opponent_defense_factor = 1.0
-
-    model_payload = football_prediction.predict_player_next_match(
-        goals, assists, played, opponent_defense_factor, is_home,
-    )
-    fallback_reasoning = model_payload.pop("prediction_reasoning")
-
-    player_name = player.get("name", req.player_name)
-    team_name = team.get("name", "")
-    opp_name = opponent.get("name", "")
-    news_ctx = _player_news(player_name, team_name, opp_name, comp_name)
-
-    prompt = f"""You are an expert football analyst reviewing a statistical model's projection.
-
-PLAYER: {player_name}
-TEAM: {team_name}
-OPPONENT: {opp_name} ({"home" if is_home else "away"} fixture)
-COMPETITION: {comp_name}
-SEASON STATS: {goals} goals, {assists} assists in {played} matches
-
---- STATISTICAL MODEL PROJECTION (your anchor) ---
-{_json.dumps(model_payload)}
-The model already accounts for: this season's per-game scoring rate, the
-next opponent's defensive record, and home/away.
-{_news_section(news_ctx)}
-Your job: refine ONLY where the news gives a clear reason (e.g. confirmed
-starting role, injury doubt, penalty duties). Stay within +/-15% of every
-model value -- except when the news is concrete and dated: then you may
-move the affected values up to +/-30%, and must set "news_adjusted" to true
-and cite it in your reasoning. If the news says the player is OUT or a
-doubtful starter, keep the numbers as an "if he plays" projection but open
-the reasoning with his status.
-
-Return ONLY a valid JSON object with exactly these keys:
-  goals_predicted, goals_low, goals_high,
-  assists_predicted, assists_low, assists_high,
-  news_adjusted, prediction_reasoning
-
-Do not use markdown. Do not wrap in code blocks.
-"""
-
-    refineable = ["goals_predicted", "goals_low", "goals_high",
-                  "assists_predicted", "assists_low", "assists_high"]
-    result = _model_anchored_football(
-        model_payload, refineable, prompt, fallback_reasoning,
-        allow_wide=bool(news_ctx and news_ctx.get("noteworthy")),
-    )
-    result["involvement_predicted"] = round(
-        result.get("goals_predicted", 0) + result.get("assists_predicted", 0), 2
-    )
-    status = (news_ctx or {}).get("player_status")
-    if status in ("OUT", "DOUBTFUL"):
-        result["player_status"] = status
-    return result
-
-
 @football_router.get("/football/matches/{match_id}/predict")
 def predict_match_endpoint(match_id: int):
-    """Full two-sided fixture prediction. Not required by the current
-    frontend flow (see MatchPrediction.tsx / HOW_IT_WORKS.md for context)
-    but kept available since football_prediction.predict_fixture() already
-    supports it at negligible extra cost."""
+    """Odds-style market prediction for a specific fixture (win/draw/win,
+    over/under, BTTS), used by the Fixtures tab's per-match modal."""
     match = next((m for m in _fb_matches if m["id"] == match_id), None)
     if not match:
         raise HTTPException(404, "Match not found.")
@@ -818,7 +752,15 @@ def predict_match_endpoint(match_id: int):
     away_brief = {"id": away["id"], "name": away.get("name", ""), "shortName": _team_short(away),
                   "crest": away.get("crest", ""), "tla": away.get("tla", "")}
     combined = _fb_matches_by_team.get(home["id"], []) + _fb_matches_by_team.get(away["id"], [])
-    return football_prediction.predict_fixture(match, home_brief, away_brief, combined)
+    result = football_prediction.predict_fixture(match, home_brief, away_brief, combined)
+
+    finished = match.get("status") == "FINISHED" and match.get("full_time_home") is not None
+    result.update({
+        "matchId": match["id"], "utcDate": match.get("utc_date") or "",
+        "status": match.get("status", ""), "stage": match.get("stage", ""),
+        "actualScore": {"home": match.get("full_time_home"), "away": match.get("full_time_away")} if finished else None,
+    })
+    return result
 
 
 # ── Standalone app (local dev only -- production mounts football_router

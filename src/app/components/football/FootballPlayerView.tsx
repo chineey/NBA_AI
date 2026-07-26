@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Trophy } from 'lucide-react';
 import { toast } from 'sonner';
 import { BackButton } from '../BackButton';
-import { NextGameBadge, PredStatCard, ReasoningCard, SectionCard, GenerateButton, InfoChip } from '../PredictionShared';
+import { NextGameBadge, SectionCard, InfoChip } from '../PredictionShared';
 import { Card } from '@/app/components/ui/card';
 import { Avatar, AvatarFallback } from '@/app/components/ui/avatar';
 import { Skeleton } from '@/app/components/ui/skeleton';
@@ -27,18 +27,6 @@ type PlayerData = {
     assistsPerGame: number;
   };
   nextMatch: { date: string; opponent: string; homeAway: string } | null;
-};
-
-type Prediction = {
-  goals_predicted: number;    goals_low: number;    goals_high: number;
-  assists_predicted: number;  assists_low: number;  assists_high: number;
-  involvement_predicted: number;
-};
-
-const EMPTY_PRED: Prediction = {
-  goals_predicted: 0, goals_low: 0, goals_high: 0,
-  assists_predicted: 0, assists_low: 0, assists_high: 0,
-  involvement_predicted: 0,
 };
 
 const POS_COLOR: Record<string, string> = {
@@ -85,12 +73,6 @@ export function FootballPlayerView({
   const [playerData, setPlayerData] = useState<PlayerData | null>(null);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
-  const [predLoading, setPredLoading] = useState(false);
-  const [prediction, setPrediction]   = useState<Prediction>(EMPTY_PRED);
-  const [predReason, setPredReason]   = useState(
-    'Click "Generate AI Prediction" to analyse this player\'s season form and predict their next match.'
-  );
-  const [hasGenerated, setHasGenerated] = useState(false);
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
@@ -98,8 +80,6 @@ export function FootballPlayerView({
     setLoading(true);
     setError('');
     setPlayerData(null);
-    setPrediction(EMPTY_PRED);
-    setHasGenerated(false);
     fetch(`${BASE}/football/player/${playerId}?team_id=${teamId}&competition_code=${competitionCode}`)
       .then(r => {
         if (!r.ok) throw new Error(`Failed to load player (${r.status})`);
@@ -110,50 +90,12 @@ export function FootballPlayerView({
       .finally(() => setLoading(false));
   }, [playerId, teamId, competitionCode]);
 
-  const generatePrediction = async () => {
-    if (!playerData) return;
-    setPredLoading(true);
-    try {
-      const r = await fetch(`${BASE}/football/predict/player`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_id:        playerId,
-          player_name:      playerData.name,
-          team_id:          teamId,
-          competition_code: competitionCode,
-        }),
-      });
-      if (!r.ok) throw new Error('Prediction failed');
-      const data = await r.json();
-      const p = typeof data === 'string' ? JSON.parse(data) : data;
-      setPrediction({
-        goals_predicted:       p.goals_predicted       ?? 0,
-        goals_low:             p.goals_low             ?? 0,
-        goals_high:            p.goals_high            ?? 0,
-        assists_predicted:     p.assists_predicted     ?? 0,
-        assists_low:           p.assists_low           ?? 0,
-        assists_high:          p.assists_high          ?? 0,
-        involvement_predicted: p.involvement_predicted ?? 0,
-      });
-      setPredReason(p.prediction_reasoning ?? 'No reasoning provided.');
-      setHasGenerated(true);
-    } catch (e) {
-      console.error(e);
-      setPredReason('Failed to generate prediction. Please try again.');
-      toast.error('Prediction failed', { description: 'Please try again in a moment.' });
-    } finally {
-      setPredLoading(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="space-y-6 animate-fade-in">
         <Skeleton className="h-8 w-32 rounded-full" />
         <Skeleton className="h-36 rounded-2xl" />
         <Skeleton className="h-40 rounded-2xl" />
-        <Skeleton className="h-48 rounded-2xl" />
       </div>
     );
   }
@@ -222,29 +164,6 @@ export function FootballPlayerView({
           </div>
         )}
       </SectionCard>
-
-      {/* AI Prediction */}
-      <SectionCard
-        icon={<Trophy className="size-4 text-green-400" />}
-        title="Predicted Stats for Next Match"
-        subtitle={hasGenerated ? 'Range shows low – high confidence interval' : undefined}
-        accent="green"
-        action={<GenerateButton onClick={generatePrediction} loading={predLoading} hasGenerated={hasGenerated} accent="green" />}
-      >
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <PredStatCard label="GOALS" predicted={prediction.goals_predicted} low={prediction.goals_low} high={prediction.goals_high} revealed={hasGenerated} accent="green" index={0} />
-          <PredStatCard label="ASSISTS" predicted={prediction.assists_predicted} low={prediction.assists_low} high={prediction.assists_high} revealed={hasGenerated} accent="green" index={1} />
-          <PredStatCard label="GOAL INVOLVEMENT" predicted={prediction.involvement_predicted} revealed={hasGenerated} accent="green" index={2} />
-        </div>
-      </SectionCard>
-
-      {/* Reasoning */}
-      <ReasoningCard
-        title="Reason for Prediction"
-        reason={predReason}
-        tip="Consider the opponent's defensive record, home/away form, and the player's scoring consistency."
-        accent="green"
-      />
     </div>
   );
 }

@@ -103,6 +103,7 @@ def sync_competition(sb, code: str) -> set[int]:
     season_id = season.get("id")
     area = comp.get("area") or {}
     start_date = season.get("startDate")
+    season_start_year = int(start_date[:4]) if start_date else None
     sb.table("football_competitions").upsert({
         "code": code,
         "competition_id": comp.get("id"),
@@ -132,14 +133,13 @@ def sync_competition(sb, code: str) -> set[int]:
     } for t in teams])
 
     if season_id:
-        season_start_year = int(start_date[:4]) if start_date else None
         _upsert(sb, "football_team_competitions", [{
             "team_id": t["id"], "competition_code": code, "season_id": season_id,
             "season_start_year": season_start_year,
         } for t in teams])
 
     print(f"[{code}] matches...")
-    matches_data = _get(f"/competitions/{code}/matches", params={"season": season_id} if season_id else None)
+    matches_data = _get(f"/competitions/{code}/matches", params={"season": season_start_year} if season_start_year else None)
     match_rows = []
     for m in matches_data.get("matches", []):
         score = m.get("score") or {}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown, Grid3x3, Target, Zap } from 'lucide-react';
+import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown, Grid3x3, Target, Zap, CalendarDays } from 'lucide-react';
 import type { FootballSection } from '@/app/components/football/FootballApp';
 import {
   Sidebar,
@@ -157,6 +157,17 @@ export function AppSidebar({ sport, setSport, mode, switchMode, footballSection,
                   >
                     <Grid3x3 />
                     <span>Browse</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={footballSection === 'fixtures'}
+                    onClick={() => setFootballSection('fixtures')}
+                    tooltip="Fixtures"
+                    className="data-[active=true]:bg-white/10 data-[active=true]:text-white"
+                  >
+                    <CalendarDays />
+                    <span>Fixtures</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>

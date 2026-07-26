@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Target, BarChart3, Goal, Sparkles } from 'lucide-react';
-
-const FOOTBALL_API = import.meta.env.VITE_FOOTBALL_API_URL ?? 'http://127.0.0.1:8001';
+import { X, Target, BarChart3, Sparkles } from 'lucide-react';
 
 interface TeamInfo { id: number; name: string; shortName: string; crest: string; tla: string }
 
@@ -28,12 +26,9 @@ interface PredictionData {
   prediction: {
     outcome: {
       homeWin: number; draw: number; awayWin: number;
-      doubleChance: { homeOrDraw: number; awayOrDraw: number; homeOrAway: number };
       overUnder: Record<string, { over: number; under: number }>;
       btts: { yes: number; no: number };
     };
-    predictedScore: { home: number; away: number };
-    correctScores: { score: string; probability: number }[];
     reasoning: string;
   };
   disclaimer: string;
@@ -81,15 +76,25 @@ function FormBadges({ form }: { form: string }) {
   );
 }
 
+const formatDate = (iso: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
+
 export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose: () => void }) {
   const [data, setData]       = useState<PredictionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
+  const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
+
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${FOOTBALL_API}/football/worldcup/predict/${matchId}`)
+    fetch(`${BASE}/football/matches/${matchId}/predict`)
       .then(r => {
         if (!r.ok) return r.json().then(b => { throw new Error(b.detail ?? `Error ${r.status}`); });
         return r.json();
@@ -117,7 +122,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-gray-900/60">
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-green-400" />
-            <h3 className="text-white font-semibold">Match Prediction</h3>
+            <h3 className="text-white font-semibold">Match Odds</h3>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
             <X className="size-5" />
@@ -141,7 +146,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
         {data && outcome && (
           <div className="p-5 space-y-6">
 
-            {/* Teams + predicted score */}
+            {/* Teams */}
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
                 <TeamCrest team={data.homeTeam} />
@@ -149,18 +154,17 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
                 <FormBadges form={data.model.homeForm.form} />
               </div>
 
-              <div className="flex flex-col items-center shrink-0">
-                <span className="text-gray-500 text-[10px] uppercase tracking-wider mb-1">Predicted FT</span>
-                <span className="text-white text-4xl font-bold tabular-nums">
-                  {data.prediction.predictedScore.home}–{data.prediction.predictedScore.away}
-                </span>
-                <span className="text-gray-500 text-xs mt-1">
-                  xG {data.model.expectedGoals.home} – {data.model.expectedGoals.away}
-                </span>
-                {data.actualScore && data.actualScore.home !== null && (
-                  <span className="text-green-400/80 text-xs mt-1">
-                    Actual: {data.actualScore.home}–{data.actualScore.away}
-                  </span>
+              <div className="flex flex-col items-center shrink-0 gap-1">
+                <span className="text-gray-500 text-[11px]">{formatDate(data.utcDate)}</span>
+                {data.actualScore && data.actualScore.home !== null ? (
+                  <>
+                    <span className="text-white text-2xl font-bold tabular-nums">
+                      {data.actualScore.home}–{data.actualScore.away}
+                    </span>
+                    <span className="text-gray-500 text-[10px] uppercase tracking-wide">Full Time</span>
+                  </>
+                ) : (
+                  <span className="text-gray-600 text-xs uppercase tracking-wide">vs</span>
                 )}
               </div>
 
@@ -175,7 +179,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Target className="size-4 text-green-400" />
-                <span className="text-white text-sm font-semibold">Who wins</span>
+                <span className="text-white text-sm font-semibold">Match Result</span>
               </div>
               <div className="flex h-3 rounded-full overflow-hidden bg-gray-800">
                 <div className="bg-green-500" style={{ width: pct(outcome.homeWin) }} />
@@ -196,7 +200,7 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
               </div>
             </div>
 
-            {/* Over / Under */}
+            {/* Over / Under + BTTS */}
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <BarChart3 className="size-4 text-green-400" />
@@ -225,31 +229,6 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
                   <span className="text-gray-600">/</span>
                   <span className="text-gray-400">No {pct(outcome.btts.no)}</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Correct scores */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Goal className="size-4 text-green-400" />
-                <span className="text-white text-sm font-semibold">Most likely correct scores</span>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {data.prediction.correctScores.map((cs, i) => (
-                  <div
-                    key={cs.score}
-                    className={`rounded-lg p-2.5 text-center border ${
-                      i === 0
-                        ? 'bg-green-500/10 border-green-500/40'
-                        : 'bg-gray-900 border-gray-800'
-                    }`}
-                  >
-                    <div className={`text-base font-bold tabular-nums ${i === 0 ? 'text-green-400' : 'text-white'}`}>
-                      {cs.score}
-                    </div>
-                    <div className="text-gray-500 text-xs">{pct(cs.probability)}</div>
-                  </div>
-                ))}
               </div>
             </div>
 

@@ -285,8 +285,7 @@ def predict_fixture(match: dict, home_team: dict, away_team: dict, matches: list
     reasoning = (
         f"The model expects {lam_h:.2f} goals for {home_team.get('shortName', 'the home side')} and "
         f"{lam_a:.2f} for {away_team.get('shortName', 'the away side')}, based on {hs['matches']} and "
-        f"{as_['matches']} matches of recent form respectively. Most likely outcome: {verdict} "
-        f"({verdict_p:.0%}), with {top[0]['score']} the single most likely scoreline ({top[0]['probability']:.0%})."
+        f"{as_['matches']} matches of recent form respectively. Most likely outcome: {verdict} ({verdict_p:.0%})."
     )
 
     return {
@@ -363,46 +362,3 @@ def predict_team_next_match(team_id: int, opponent_id: int, is_home: bool,
     }
 
 
-# ── Public: player "next match" prediction ────────────────────────────────────
-def predict_player_next_match(goals: int, assists: int, played_matches: int,
-                              opponent_defense_factor: float, is_home: bool,
-                              context: dict | None = None) -> dict:
-    """
-    Season-rate heuristic for a player's next match -- there is no per-game
-    player data anywhere on this API tier to fit a real per-match model
-    against (only season-aggregate goals/assists from the scorers endpoint),
-    so this scales the player's season rate by the next opponent's
-    defensive strength and a mild home/away nudge. `context`, if given, is
-    `{"goalsFactor":, "assistsFactor":}` -- already clamped by the caller.
-    """
-    played = max(played_matches, 1)
-    goals_rate = goals / played
-    assists_rate = assists / played
-
-    loc_adj = 1.10 if is_home else 0.92
-    goals_pred = goals_rate * opponent_defense_factor * loc_adj
-    assists_pred = assists_rate * opponent_defense_factor * loc_adj
-
-    if context:
-        goals_pred *= context.get("goalsFactor", 1.0)
-        assists_pred *= context.get("assistsFactor", 1.0)
-
-    def _band(v: float) -> tuple[float, float]:
-        return round(max(0.0, v * 0.4), 2), round(v * 2.2 + 0.15, 2)
-
-    g_low, g_high = _band(goals_pred)
-    a_low, a_high = _band(assists_pred)
-
-    reasoning = (
-        f"Based on this season's rate of {goals_rate:.2f} goals and {assists_rate:.2f} assists "
-        f"per game across {played} matches, adjusted for the next opponent's defensive record"
-        f"{' and home advantage' if is_home else ''}. Football has no per-game player stats on "
-        f"this data tier, so this is a season-rate estimate rather than a per-match model."
-    )
-
-    return {
-        "goals_predicted": round(goals_pred, 2), "goals_low": g_low, "goals_high": g_high,
-        "assists_predicted": round(assists_pred, 2), "assists_low": a_low, "assists_high": a_high,
-        "involvement_predicted": round(goals_pred + assists_pred, 2),
-        "prediction_reasoning": reasoning,
-    }

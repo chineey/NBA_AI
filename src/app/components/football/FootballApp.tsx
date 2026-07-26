@@ -8,10 +8,11 @@ import { FootballTeamView, type SquadPlayer } from './FootballTeamView';
 import { FootballPlayerView } from './FootballPlayerView';
 import { FootballPlayerSearch, type PlayerSearchResult } from './FootballPlayerSearch';
 import { FootballLeaders, type LeaderEntry } from './FootballLeaders';
+import { FootballFixtures } from './FootballFixtures';
 
-export type FootballSection = 'browse' | 'scorers' | 'assists';
+export type FootballSection = 'browse' | 'fixtures' | 'scorers' | 'assists';
 
-type View = 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders';
+type View = 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders' | 'fixtures';
 type BrowseMode = 'competitions' | 'all-teams';
 
 type SelectedTeam = {
@@ -46,7 +47,7 @@ export function FootballApp({ section }: Props) {
   useEffect(() => {
     setSelectedTeam(null);
     setSelectedPlayer(null);
-    setView(section === 'browse' ? 'browse' : 'leaders');
+    setView(section === 'browse' ? 'browse' : section === 'fixtures' ? 'fixtures' : 'leaders');
   }, [section]);
 
   const handleSelectCompetition = (code: string, name: string) => {
@@ -137,6 +138,10 @@ export function FootballApp({ section }: Props) {
 
     if (view === 'leaders') {
       return <FootballLeaders stat={leaderStat} onSelectPlayer={handleSelectPlayerFromLeaders} />;
+    }
+
+    if (view === 'fixtures') {
+      return <FootballFixtures />;
     }
 
     if (view === 'team' && selectedTeam) {
