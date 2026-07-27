@@ -15,8 +15,9 @@ export type FootballSection = 'browse' | 'fixtures' | 'scorers' | 'assists';
 type View = 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders' | 'fixtures';
 type BrowseMode = 'competitions' | 'all-teams';
 
-type SelectedTeam = {
-  id: number; name: string; shortName: string; tla: string; crest: string;
+type TeamRef = { id: number; name: string; shortName: string; tla: string; crest: string };
+
+type SelectedTeam = TeamRef & {
   competition: { code: string; name: string };
 };
 
@@ -29,6 +30,9 @@ type Props = {
   section: FootballSection;
 };
 
+const defaultViewForSection = (section: FootballSection): View =>
+  section === 'browse' ? 'browse' : section === 'fixtures' ? 'fixtures' : 'leaders';
+
 export function FootballApp({ section }: Props) {
   const [view, setView] = useState<View>('browse');
   const [browseMode, setBrowseMode] = useState<BrowseMode>('competitions');
@@ -39,7 +43,12 @@ export function FootballApp({ section }: Props) {
 
   const [selectedTeam, setSelectedTeam] = useState<SelectedTeam | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<SelectedPlayer | null>(null);
-  const [returnView, setReturnView] = useState<View>('browse');
+
+  // A real navigation stack: team/league/player links can now be clicked
+  // from many places (fixtures, search, leaders, player header), not just
+  // the one view that used to lead there, so "back" has to unwind however
+  // deep the user actually went rather than a single hardcoded parent.
+  const [viewStack, setViewStack] = useState<View[]>([]);
 
   const leaderStat: 'goals' | 'assists' = section === 'assists' ? 'assists' : 'goals';
 
@@ -47,26 +56,39 @@ export function FootballApp({ section }: Props) {
   useEffect(() => {
     setSelectedTeam(null);
     setSelectedPlayer(null);
-    setView(section === 'browse' ? 'browse' : section === 'fixtures' ? 'fixtures' : 'leaders');
+    setViewStack([]);
+    setView(defaultViewForSection(section));
   }, [section]);
+
+  const goTo = (next: View) => {
+    setViewStack(s => [...s, view]);
+    setView(next);
+  };
+
+  const goBack = () => {
+    setViewStack(s => {
+      const prev = s[s.length - 1] ?? defaultViewForSection(section);
+      setView(prev);
+      return s.length ? s.slice(0, -1) : s;
+    });
+  };
 
   const handleSelectCompetition = (code: string, name: string) => {
     setCompetitionCode(code);
     setCompetitionName(name);
-    setView('competition-teams');
+    goTo('competition-teams');
   };
 
-  const handleSelectTeamFromCompetition = (team: FootballTeam) => {
-    setSelectedTeam({ ...team, competition: { code: competitionCode, name: competitionName } });
-    setReturnView('competition-teams');
-    setView('team');
+  const handleSelectTeam = (team: TeamRef, teamCompetitionCode: string, teamCompetitionName: string) => {
+    setSelectedTeam({ ...team, competition: { code: teamCompetitionCode, name: teamCompetitionName } });
+    goTo('team');
   };
 
-  const handleSelectTeamFromAll = (team: TeamEntry) => {
-    setSelectedTeam(team);
-    setReturnView('browse'); // browseMode state (still 'all-teams') is untouched, so browse restores correctly
-    setView('team');
-  };
+  const handleSelectTeamFromCompetition = (team: FootballTeam) =>
+    handleSelectTeam(team, competitionCode, competitionName);
+
+  const handleSelectTeamFromAll = (team: TeamEntry) =>
+    handleSelectTeam(team, team.competition.code, team.competition.name);
 
   const handleSelectPlayerFromTeam = (player: SquadPlayer, teamName: string) => {
     if (!selectedTeam) return;
@@ -78,8 +100,7 @@ export function FootballApp({ section }: Props) {
       initialName: player.name,
       initialPosition: player.position,
     });
-    setReturnView('team');
-    setView('player');
+    goTo('player');
   };
 
   const handleSelectPlayerFromSearch = (result: PlayerSearchResult) => {
@@ -92,8 +113,10 @@ export function FootballApp({ section }: Props) {
       initialPosition: result.position,
       backLabel: 'Back',
     });
-    if (view !== 'player') setReturnView(view);
-    setView('player');
+    // The search panel is visible on every view, so picking another player
+    // while already on 'player' replaces the current view instead of
+    // stacking a new one (there'd be nothing meaningful to "go back" to).
+    if (view !== 'player') goTo('player');
   };
 
   const handleSelectPlayerFromLeaders = (result: LeaderEntry) => {
@@ -106,18 +129,7 @@ export function FootballApp({ section }: Props) {
       initialPosition: result.position,
       backLabel: `Back to ${leaderStat === 'goals' ? 'Top Scorers' : 'Top Assists'}`,
     });
-    setReturnView('leaders');
-    setView('player');
-  };
-
-  const handleBackFromTeam = () => {
-    setSelectedTeam(null);
-    setView(returnView === 'competition-teams' ? 'competition-teams' : 'browse');
-  };
-
-  const handleBackFromPlayer = () => {
-    setSelectedPlayer(null);
-    setView(returnView);
+    goTo('player');
   };
 
   const mainContent = () => {
@@ -131,17 +143,37 @@ export function FootballApp({ section }: Props) {
           initialName={selectedPlayer.initialName}
           initialPosition={selectedPlayer.initialPosition}
           backLabel={selectedPlayer.backLabel}
-          onBack={handleBackFromPlayer}
+          onBack={goBack}
+          onSelectTeam={() => handleSelectTeam(
+            { id: selectedPlayer.teamId, name: selectedPlayer.teamName, shortName: selectedPlayer.teamName, tla: '', crest: '' },
+            selectedPlayer.competitionCode,
+            '',
+          )}
         />
       );
     }
 
     if (view === 'leaders') {
-      return <FootballLeaders stat={leaderStat} onSelectPlayer={handleSelectPlayerFromLeaders} />;
+      return (
+        <FootballLeaders
+          stat={leaderStat}
+          onSelectPlayer={handleSelectPlayerFromLeaders}
+          onSelectTeam={entry => handleSelectTeam(
+            { id: entry.teamId, name: entry.teamName, shortName: entry.teamName, tla: '', crest: entry.teamCrest },
+            entry.competitionCode,
+            '',
+          )}
+        />
+      );
     }
 
     if (view === 'fixtures') {
-      return <FootballFixtures />;
+      return (
+        <FootballFixtures
+          onSelectTeam={(team, compCode, compName) => handleSelectTeam(team, compCode, compName)}
+          onSelectCompetition={handleSelectCompetition}
+        />
+      );
     }
 
     if (view === 'team' && selectedTeam) {
@@ -149,7 +181,7 @@ export function FootballApp({ section }: Props) {
         <FootballTeamView
           team={selectedTeam}
           onSelectPlayer={handleSelectPlayerFromTeam}
-          onBack={handleBackFromTeam}
+          onBack={goBack}
         />
       );
     }
@@ -160,7 +192,7 @@ export function FootballApp({ section }: Props) {
           competitionCode={competitionCode}
           competitionName={competitionName}
           onSelectTeam={handleSelectTeamFromCompetition}
-          onBack={() => setView('browse')}
+          onBack={goBack}
         />
       );
     }
@@ -206,6 +238,11 @@ export function FootballApp({ section }: Props) {
       <div className="lg:col-span-1 lg:sticky lg:top-24 self-start">
         <FootballPlayerSearch
           onSelectPlayer={handleSelectPlayerFromSearch}
+          onSelectTeam={result => handleSelectTeam(
+            { id: result.teamId, name: result.teamName, shortName: result.teamName, tla: '', crest: result.teamCrest },
+            result.competitionCode,
+            result.competitionName,
+          )}
           selectedPlayerId={view === 'player' ? selectedPlayer?.playerId ?? null : null}
         />
       </div>

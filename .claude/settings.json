@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//tmp/**)",
+      "Bash(netstat -ano)",
+      "Bash(npx playwright *)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

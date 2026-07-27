@@ -65,10 +65,11 @@ type Props = {
   initialPosition: string;
   backLabel?: string;
   onBack: () => void;
+  onSelectTeam: () => void;
 };
 
 export function FootballPlayerView({
-  playerId, teamId, teamName, competitionCode, initialName, initialPosition, backLabel, onBack,
+  playerId, teamId, teamName, competitionCode, initialName, initialPosition, backLabel, onBack, onSelectTeam,
 }: Props) {
   const [playerData, setPlayerData] = useState<PlayerData | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -129,7 +130,12 @@ export function FootballPlayerView({
             <PlayerAvatar name={displayName} position={displayPosition} />
             <div className="space-y-2">
               <h2 className="font-display text-2xl text-white font-bold tracking-tight">{displayName}</h2>
-              <p className="text-gray-400 text-sm">{teamName}{displayPosition ? ` • ${displayPosition}` : ''}</p>
+              <p className="text-gray-400 text-sm">
+                <button onClick={onSelectTeam} className="hover:text-green-400 hover:underline transition-colors">
+                  {teamName}
+                </button>
+                {displayPosition ? ` • ${displayPosition}` : ''}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {playerData.shirtNumber != null && <InfoChip accent>#{playerData.shirtNumber}</InfoChip>}
                 {playerData.nationality && <InfoChip>{playerData.nationality}</InfoChip>}

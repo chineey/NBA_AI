@@ -44,9 +44,10 @@ const HEAD_CLS = 'text-[11px] font-semibold tracking-wider text-gray-500 whitesp
 type Props = {
   stat: 'goals' | 'assists';
   onSelectPlayer: (player: LeaderEntry) => void;
+  onSelectTeam: (player: LeaderEntry) => void;
 };
 
-export function FootballLeaders({ stat, onSelectPlayer }: Props) {
+export function FootballLeaders({ stat, onSelectPlayer, onSelectTeam }: Props) {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [competitionCode, setCompetitionCode] = useState('');
   const [leaders, setLeaders] = useState<LeaderEntry[]>([]);
@@ -147,13 +148,16 @@ export function FootballLeaders({ stat, onSelectPlayer }: Props) {
                     </div>
                   </TableCell>
                   <TableCell className="px-3 py-3">
-                    <div className="flex items-center gap-2">
+                    <button
+                      onClick={e => { e.stopPropagation(); onSelectTeam(p); }}
+                      className="flex items-center gap-2 hover:underline"
+                    >
                       {p.teamCrest && (
                         <img src={p.teamCrest} alt="" className="size-5 object-contain"
                           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       )}
-                      <span className="text-gray-300 whitespace-nowrap">{p.teamName}</span>
-                    </div>
+                      <span className="text-gray-300 whitespace-nowrap hover:text-green-400 transition-colors">{p.teamName}</span>
+                    </button>
                   </TableCell>
                   <TableCell className="px-3 py-3 text-center text-gray-400 tabular-nums">{p.playedMatches}</TableCell>
                   <TableCell className={`px-3 py-3 text-center tabular-nums font-semibold ${isGoals ? 'text-green-400' : 'text-white'}`}>{p.goals}</TableCell>

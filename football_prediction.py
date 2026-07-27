@@ -241,6 +241,49 @@ def _top_scores(matrix: list[list[float]], n: int = 6) -> list[dict]:
     return flat[:n]
 
 
+def _bucket_best(candidates: list[tuple[str, float]]) -> dict:
+    """Highest-probability option within one market group (see `_picks`)."""
+    label, p = max(candidates, key=lambda c: c[1])
+    return {"label": label, "probability": round(p, 4)}
+
+
+def _picks(markets: dict, home_label: str, away_label: str) -> list[dict]:
+    """
+    Three bookie-style picks, one per market group, each the highest-
+    probability option within its group -- e.g. a defensively strong home
+    side against an inconsistent away attack should surface "Under 2.5"
+    over "Both Teams to Score", because the group comparison is driven by
+    the same attack/defense/form-derived lambdas as every other market,
+    not a fixed template. Picking the best of each group (rather than the
+    global top 3) keeps the picks from all collapsing onto near-duplicate
+    markets (e.g. Over 1.5 and Over 2.5 together), since probability rises
+    monotonically as a goal line/double-chance market widens.
+    """
+    result = [
+        (f"{home_label} to Win", markets["aWin"]),
+        ("Draw", markets["draw"]),
+        (f"{away_label} to Win", markets["bWin"]),
+        (f"{home_label} Win or Draw", markets["aWin"] + markets["draw"]),
+        (f"{away_label} Win or Draw", markets["bWin"] + markets["draw"]),
+        ("Either Team to Win", markets["aWin"] + markets["bWin"]),
+    ]
+    # Only the 3 standard bookie lines -- 0.5 and 4.5 are excluded because
+    # probability moves toward certainty at the extremes (Under 4.5 alone
+    # clears ~85% in most real matches), so a raw argmax across every line
+    # would almost always default to the widest one instead of a line that
+    # actually reflects these two teams.
+    goals = [
+        (f"{'Over' if side == 'over' else 'Under'} {line} Goals", markets["overUnder"][line][side])
+        for line in ("1.5", "2.5", "3.5")
+        for side in ("over", "under")
+    ]
+    btts = [
+        ("Goal/Goal (Both Teams to Score)", markets["btts"]["yes"]),
+        ("No Goal (Both Teams to Score)", markets["btts"]["no"]),
+    ]
+    return [_bucket_best(result), _bucket_best(goals), _bucket_best(btts)]
+
+
 # ── Shared lambda computation ─────────────────────────────────────────────────
 def _compute_lambdas(home_id: int, away_id: int, matches: list[dict],
                      before_iso: str | None = None) -> tuple[float, float, dict, dict, dict | None]:
@@ -274,19 +317,8 @@ def predict_fixture(match: dict, home_team: dict, away_team: dict, matches: list
     markets = _markets(matrix)
     top = _top_scores(matrix)
 
-    verdict_p = max(markets["aWin"], markets["draw"], markets["bWin"])
-    if verdict_p == markets["aWin"]:
-        verdict = f"{home_team.get('shortName', home_team.get('name', 'Home'))} to win"
-    elif verdict_p == markets["bWin"]:
-        verdict = f"{away_team.get('shortName', away_team.get('name', 'Away'))} to win"
-    else:
-        verdict = "a draw"
-
-    reasoning = (
-        f"The model expects {lam_h:.2f} goals for {home_team.get('shortName', 'the home side')} and "
-        f"{lam_a:.2f} for {away_team.get('shortName', 'the away side')}, based on {hs['matches']} and "
-        f"{as_['matches']} matches of recent form respectively. Most likely outcome: {verdict} ({verdict_p:.0%})."
-    )
+    home_label = home_team.get("shortName") or home_team.get("name", "Home")
+    away_label = away_team.get("shortName") or away_team.get("name", "Away")
 
     return {
         "homeTeam": home_team, "awayTeam": away_team,
@@ -302,7 +334,7 @@ def predict_fixture(match: dict, home_team: dict, away_team: dict, matches: list
             },
             "predictedScore": {"home": top[0]["a"], "away": top[0]["b"]},
             "correctScores": [{"score": s["score"], "home": s["a"], "away": s["b"], "probability": s["probability"]} for s in top],
-            "reasoning": reasoning,
+            "picks": _picks(markets, home_label, away_label),
         },
         "disclaimer": (
             "Probabilities are model estimates from recent form, not guarantees. "

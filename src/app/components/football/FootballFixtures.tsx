@@ -55,7 +55,12 @@ function TeamCrestSmall({ team }: { team: FixtureTeam }) {
   );
 }
 
-export function FootballFixtures() {
+type Props = {
+  onSelectTeam: (team: FixtureTeam, competitionCode: string, competitionName: string) => void;
+  onSelectCompetition: (code: string, name: string) => void;
+};
+
+export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [competitionCode, setCompetitionCode] = useState('ALL');
   const [when, setWhen] = useState<When>('upcoming');
@@ -142,22 +147,33 @@ export function FootballFixtures() {
         ) : (
           <div className="divide-y divide-white/[0.05]">
             {fixtures.map(f => (
-              <button
+              <div
                 key={f.matchId}
+                role="button"
+                tabIndex={0}
                 onClick={() => setOpenMatchId(f.matchId)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03] transition-colors"
+                onKeyDown={e => { if (e.key === 'Enter') setOpenMatchId(f.matchId); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03] transition-colors cursor-pointer"
               >
                 <div className="w-28 shrink-0">
                   <div className="text-gray-400 text-xs">{formatFixtureDate(f.utcDate)}</div>
-                  <Badge variant="outline" className="mt-1 border-transparent bg-gray-800 px-1.5 py-0 text-[10px] text-gray-400">
-                    {f.competition.code}
-                  </Badge>
+                  <button
+                    onClick={e => { e.stopPropagation(); onSelectCompetition(f.competition.code, f.competition.name); }}
+                    className="mt-1"
+                  >
+                    <Badge variant="outline" className="border-transparent bg-gray-800 px-1.5 py-0 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-green-400 transition-colors">
+                      {f.competition.code}
+                    </Badge>
+                  </button>
                 </div>
                 <div className="flex-1 min-w-0 flex items-center justify-center gap-3">
-                  <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
-                    <span className="text-white text-sm font-medium truncate">{f.homeTeam.shortName}</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); onSelectTeam(f.homeTeam, f.competition.code, f.competition.name); }}
+                    className="flex items-center gap-2 flex-1 justify-end min-w-0 hover:opacity-80"
+                  >
+                    <span className="text-white text-sm font-medium truncate hover:text-green-400 hover:underline transition-colors">{f.homeTeam.shortName}</span>
                     <TeamCrestSmall team={f.homeTeam} />
-                  </div>
+                  </button>
                   <div className="shrink-0 text-center w-14">
                     {f.score ? (
                       <span className="text-white text-sm font-bold tabular-nums">{f.score.home}–{f.score.away}</span>
@@ -165,17 +181,20 @@ export function FootballFixtures() {
                       <span className="text-gray-600 text-xs">vs</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <button
+                    onClick={e => { e.stopPropagation(); onSelectTeam(f.awayTeam, f.competition.code, f.competition.name); }}
+                    className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80"
+                  >
                     <TeamCrestSmall team={f.awayTeam} />
-                    <span className="text-white text-sm font-medium truncate">{f.awayTeam.shortName}</span>
-                  </div>
+                    <span className="text-white text-sm font-medium truncate hover:text-green-400 hover:underline transition-colors">{f.awayTeam.shortName}</span>
+                  </button>
                 </div>
                 <div className="w-16 shrink-0 text-right">
                   <span className={`text-[10px] font-semibold uppercase tracking-wide ${f.status === 'FINISHED' ? 'text-gray-500' : 'text-green-400'}`}>
                     {STATUS_LABEL[f.status] ?? f.status}
                   </span>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}

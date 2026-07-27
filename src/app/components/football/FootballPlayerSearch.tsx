@@ -44,10 +44,11 @@ const POS_COLOR: Record<string, string> = {
 
 type Props = {
   onSelectPlayer: (result: PlayerSearchResult) => void;
+  onSelectTeam: (result: PlayerSearchResult) => void;
   selectedPlayerId: number | null;
 };
 
-export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props) {
+export function FootballPlayerSearch({ onSelectPlayer, onSelectTeam, selectedPlayerId }: Props) {
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState<PlayerSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -123,15 +124,21 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
           results.map(r => {
             const isSelected = selectedPlayerId === r.id;
             return (
-              <button
+              <div
                 key={r.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectPlayer(r)}
-                className={`w-full p-3 flex items-center gap-3 transition-colors text-left hover:bg-white/[0.03] ${
+                onKeyDown={e => { if (e.key === 'Enter') onSelectPlayer(r); }}
+                className={`w-full p-3 flex items-center gap-3 transition-colors text-left hover:bg-white/[0.03] cursor-pointer ${
                   isSelected ? 'bg-green-500/10 border-l-2 border-green-500 pl-2.5' : ''
                 }`}
               >
                 {/* Team crest */}
-                <div className="shrink-0 size-9 rounded-full bg-gray-800 border border-white/[0.08] flex items-center justify-center overflow-hidden">
+                <button
+                  onClick={e => { e.stopPropagation(); onSelectTeam(r); }}
+                  className="shrink-0 size-9 rounded-full bg-gray-800 border border-white/[0.08] flex items-center justify-center overflow-hidden"
+                >
                   {r.teamCrest ? (
                     <img
                       src={r.teamCrest}
@@ -142,12 +149,17 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
                   ) : (
                     <span className="text-gray-400 text-xs">⚽</span>
                   )}
-                </div>
+                </button>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="text-white text-sm font-medium truncate">{r.name}</div>
-                  <div className="text-gray-500 text-xs mt-0.5 truncate">{r.teamName}</div>
+                  <button
+                    onClick={e => { e.stopPropagation(); onSelectTeam(r); }}
+                    className="text-gray-500 text-xs mt-0.5 truncate block hover:text-green-400 hover:underline transition-colors"
+                  >
+                    {r.teamName}
+                  </button>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <Badge variant="outline" className={`border-transparent px-1.5 py-0 text-[10px] ${LEAGUE_COLORS[r.competitionCode] ?? 'bg-gray-700 text-gray-400'}`}>
                       {r.competitionCode}
@@ -166,7 +178,7 @@ export function FootballPlayerSearch({ onSelectPlayer, selectedPlayerId }: Props
                   <div className="text-gray-400 text-xs">{r.assists}A</div>
                   <div className="text-gray-600 text-xs">{r.playedMatches}gp</div>
                 </div>
-              </button>
+              </div>
             );
           })
         )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Target, BarChart3, Sparkles } from 'lucide-react';
+import { X, Target, BarChart3, Sparkles, Star } from 'lucide-react';
 
 interface TeamInfo { id: number; name: string; shortName: string; crest: string; tla: string }
 
@@ -29,7 +29,7 @@ interface PredictionData {
       overUnder: Record<string, { over: number; under: number }>;
       btts: { yes: number; no: number };
     };
-    reasoning: string;
+    picks: { label: string; probability: number }[];
   };
   disclaimer: string;
 }
@@ -232,12 +232,31 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
               </div>
             </div>
 
-            {/* Reasoning */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <p className="text-gray-300 text-sm leading-relaxed">{data.prediction.reasoning}</p>
-              <p className="text-gray-600 text-xs mt-3">
-                {data.model.type} · {data.disclaimer}
-              </p>
+            {/* Top picks */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Star className="size-4 text-green-400" />
+                <span className="text-white text-sm font-semibold">Top Picks</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {data.prediction.picks.map((pick, i) => (
+                  <div
+                    key={pick.label}
+                    className={`rounded-lg p-3 text-center border ${
+                      i === 0 ? 'bg-green-500/10 border-green-500/40' : 'bg-gray-900 border-gray-800'
+                    }`}
+                  >
+                    <div className={`text-xl font-bold tabular-nums ${i === 0 ? 'text-green-400' : 'text-white'}`}>
+                      {pct(pick.probability)}
+                    </div>
+                    <div className="text-gray-400 text-xs mt-1">{pick.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+              <p className="text-gray-600 text-xs">{data.model.type} · {data.disclaimer}</p>
             </div>
 
           </div>
