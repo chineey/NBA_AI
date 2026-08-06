@@ -383,18 +383,20 @@ def _call_nba_api(endpoint_class, **kwargs):
     """
     Call an nba_api stats endpoint class with retry:
     first with no headers (works locally), then with _NBA_HEADERS (works on cloud hosts).
-    Uses a fast timeout (3s) to prevent hanging requests.
+    Uses a fast timeout (10s) to prevent hanging requests.
     """
     last_err = None
     for headers in (None, _NBA_HEADERS):
         try:
             time.sleep(0.6)
-            instance = endpoint_class(headers=headers, timeout=3, **kwargs)
+            instance = endpoint_class(headers=headers, timeout=10, **kwargs)
             return instance.get_data_frames()[0]
         except Exception as e:
             last_err = e
             print(f"[nba_api] Call to {endpoint_class.__name__} failed (headers={'custom' if headers else 'default'}): {e}")
-    raise last_err
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError(f"[nba_api] Call to {endpoint_class.__name__} failed with no captured exception")
 
 
 _roster_cache_file = os.path.join(os.path.dirname(__file__), "nba_team_rosters_cache.json")
@@ -459,7 +461,7 @@ def _fetch_schedule(season: str) -> pd.DataFrame | None:
     for headers in (None, _NBA_HEADERS):
         try:
             time.sleep(1)
-            sched = ScheduleLeagueV2(league_id='00', season=season, headers=headers, timeout=3)
+            sched = ScheduleLeagueV2(league_id='00', season=season, headers=headers, timeout=10)
             df = sched.get_data_frames()[0]
             # Normalise to lowercase so column detection is case-insensitive
             df.columns = [c.lower() for c in df.columns]

@@ -294,7 +294,7 @@ def update_player_profiles(sb, new_rows):
         for headers in (None, _NBA_HEADERS):
             try:
                 time.sleep(0.6)  # Safe rate limit delay
-                info = CommonPlayerInfo(player_id=official_id, headers=headers, timeout=3)
+                info = CommonPlayerInfo(player_id=official_id, headers=headers, timeout=10)
                 df_info = info.get_data_frames()[0]
                 break
             except Exception as e:
@@ -384,7 +384,7 @@ def update_team_rosters(sb):
         for headers in (None, _NBA_HEADERS):
             try:
                 time.sleep(0.6)  # Safe rate limit delay
-                info = CommonTeamRoster(team_id=team_id, season=current_season_label(), headers=headers, timeout=3)
+                info = CommonTeamRoster(team_id=team_id, season=current_season_label(), headers=headers, timeout=10)
                 df_roster = info.get_data_frames()[0]
                 break
             except Exception as e:
@@ -488,6 +488,16 @@ def run():
         print(f"  {min(i + 500, len(rows))}/{len(rows)} done")
 
     print("Refresh complete.")
+
+    deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
+    if deployed_url:
+        print(f"Triggering cache reload on deployed backend: {deployed_url}...")
+        try:
+            deployed_url = deployed_url.rstrip("/")
+            resp = requests.get(f"{deployed_url}/reload", timeout=15)
+            print(f"    NBA reload response: {resp.status_code} - {resp.json()}")
+        except Exception as e:
+            print(f"    Failed to trigger reload on deployed backend: {e}")
 
 
 if __name__ == "__main__":

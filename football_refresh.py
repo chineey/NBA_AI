@@ -293,6 +293,16 @@ def main():
 
     print("Football refresh complete.")
 
+    deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
+    if deployed_url:
+        print(f"Triggering cache reload on deployed backend: {deployed_url}...")
+        try:
+            deployed_url = deployed_url.rstrip("/")
+            resp = requests.get(f"{deployed_url}/football/reload", timeout=15)
+            print(f"    Football reload response: {resp.status_code} - {resp.json()}")
+        except Exception as e:
+            print(f"    Failed to trigger reload on deployed backend: {e}")
+
 
 if __name__ == "__main__":
     main()
