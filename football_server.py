@@ -31,7 +31,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-import football_prediction
+import football_prediction_model
 from gemini_context import grounded_research
 
 load_dotenv()
@@ -646,7 +646,7 @@ def predict_team(req: FootballTeamPredictionRequest):
     comp_name = comp.get("name", nm["competition_code"]) if comp else nm["competition_code"]
 
     combined_matches = _fb_matches_by_team.get(req.team_id, []) + _fb_matches_by_team.get(opponent_id, [])
-    model_payload = football_prediction.predict_team_next_match(
+    model_payload = football_prediction_model.predict_team_next_match(
         req.team_id, opponent_id, is_home, combined_matches,
     )
     fallback_reasoning = model_payload.pop("prediction_reasoning")
@@ -752,7 +752,7 @@ def predict_match_endpoint(match_id: int):
     away_brief = {"id": away["id"], "name": away.get("name", ""), "shortName": _team_short(away),
                   "crest": away.get("crest", ""), "tla": away.get("tla", "")}
     combined = _fb_matches_by_team.get(home["id"], []) + _fb_matches_by_team.get(away["id"], [])
-    result = football_prediction.predict_fixture(match, home_brief, away_brief, combined)
+    result = football_prediction_model.predict_fixture(match, home_brief, away_brief, combined)
 
     finished = match.get("status") == "FINISHED" and match.get("full_time_home") is not None
     result.update({

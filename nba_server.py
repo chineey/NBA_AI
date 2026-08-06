@@ -24,7 +24,7 @@ app.add_middleware(
 client = genai.Client(api_key=os.getenv("GEMINI_API"))
 
 import json as _json
-from nba_model import (
+from nba_prediction_model import (
     opponent_defense_factors, project_stats, detect_next_b2b, to_int_payload,
 )
 from gemini_context import grounded_research
