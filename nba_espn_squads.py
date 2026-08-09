@@ -236,6 +236,16 @@ def main():
             
     print(f"\nRoster refresh complete. Total players processed: {total_parsed}")
 
+    deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
+    if deployed_url and not args.dry_run:
+        print(f"Triggering cache reload on deployed backend: {deployed_url}...")
+        try:
+            deployed_url = deployed_url.rstrip("/")
+            resp = requests.get(f"{deployed_url}/reload", timeout=15)
+            print(f"    NBA reload response: {resp.status_code} - {resp.json()}")
+        except Exception as e:
+            print(f"    Failed to trigger reload on deployed backend: {e}")
+
 
 if __name__ == "__main__":
     main()
