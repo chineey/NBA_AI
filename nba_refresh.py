@@ -405,6 +405,13 @@ def update_team_rosters(sb):
             print(f"    Failed to fetch roster for {abbr} completely.")
 
     if roster_rows:
+        print("Clearing old rosters from Supabase...")
+        try:
+            sb.table('nba_team_rosters').delete().neq('player_id', 0).execute()
+            print("Rosters cleared.")
+        except Exception as e:
+            print(f"Failed to clear old rosters: {e}")
+
         print(f"Upserting {len(roster_rows)} roster players to Supabase...")
         for i in range(0, len(roster_rows), 100):
             batch = roster_rows[i:i+100]

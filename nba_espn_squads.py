@@ -36,18 +36,17 @@ TEAMS = [
 ]
 
 
-def standard_to_espn_abbr(abbr: str) -> str:
-    """Map standard NBA team abbreviations to ESPN API codes."""
-    mapping = {
-        'GSW': 'gs',
-        'NOP': 'no',
-        'NYK': 'ny',
-        'SAS': 'sa',
-        'PHX': 'pho',
-        'UTA': 'uth',
-        'WAS': 'wsh',
-    }
-    return mapping.get(abbr.upper(), abbr.lower())
+_STANDARD_TO_ESPN_ID = {
+    'ATL': 1, 'BOS': 2, 'BKN': 17, 'CHA': 30, 'CHI': 4, 'CLE': 5, 'DAL': 6, 'DEN': 7,
+    'DET': 8, 'GSW': 9, 'HOU': 10, 'IND': 11, 'LAC': 12, 'LAL': 13, 'MEM': 29, 'MIA': 14,
+    'MIL': 15, 'MIN': 16, 'NOP': 3, 'NYK': 18, 'OKC': 25, 'ORL': 19, 'PHI': 20, 'PHX': 21,
+    'POR': 22, 'SAC': 23, 'SAS': 24, 'TOR': 28, 'UTA': 26, 'WAS': 27
+}
+
+
+def standard_to_espn_id(abbr: str) -> int:
+    """Map standard NBA team abbreviations to numeric ESPN team IDs."""
+    return _STANDARD_TO_ESPN_ID.get(abbr.upper(), 0)
 
 
 def clean_height(h: str) -> str:
@@ -126,8 +125,8 @@ def find_official_player_id(player_name: str, espn_id: int, sb_client=None) -> i
 
 def refresh_roster(team_abbr: str, sb_client, dry_run: bool = False) -> list:
     """Fetch, parse, and optionally upsert ESPN roster for a specific team."""
-    espn_code = standard_to_espn_abbr(team_abbr)
-    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{espn_code}/roster"
+    espn_id = standard_to_espn_id(team_abbr)
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{espn_id}/roster"
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
@@ -174,6 +173,9 @@ def refresh_roster(team_abbr: str, sb_client, dry_run: bool = False) -> list:
     if not dry_run and roster_rows and sb_client:
         print(f"  Upserting {len(roster_rows)} players for {team_abbr} to Supabase...")
         try:
+            # Clear existing roster for this team to avoid duplicates/stale players
+            sb_client.table('nba_team_rosters').delete().eq('team_abbr', team_abbr).execute()
+            
             # Match the refresh.py batch-upsert pattern
             for i in range(0, len(roster_rows), 100):
                 batch = roster_rows[i:i+100]
