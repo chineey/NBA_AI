@@ -3,7 +3,7 @@ Fetch football data for the 10 free-tier club competitions from
 football-data.org and upsert it into Supabase, so the live backend never
 calls the API itself (avoids the free tier's 10 req/min rate limit).
 
-Run manually, like refresh.py:
+Run manually, like nba_refresh.py:
     python football_refresh.py                        # all 10 competitions
     python football_refresh.py --competitions PL,CL    # restrict, for testing
     python football_refresh.py --skip-squads           # skip per-team squad sync

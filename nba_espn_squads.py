@@ -6,13 +6,13 @@ This serves as a faster-updating fallback/alternative to stats.nba.com.
 
 Usage:
     # Dry run (test only, no DB updates)
-    python espn_refresh.py --dry-run
+    python nba_espn_squads.py --dry-run
     
     # Update all rosters in Supabase
-    python espn_refresh.py
+    python nba_espn_squads.py
     
     # Update only the Celtics roster
-    python espn_refresh.py --team BOS
+    python nba_espn_squads.py --team BOS
 """
 
 import os

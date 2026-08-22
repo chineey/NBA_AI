@@ -15,9 +15,9 @@ football_refresh.py). The two strengths combine into expected goals
 market is derived from that matrix.
 
 This module is intentionally free of any Gemini/LLM code, mirroring
-nba_model.py -- it is a pure, deterministic engine. AI-assisted refinement
+nba_prediction_model.py -- it is a pure, deterministic engine. AI-assisted refinement
 (the evidence-gated clamp) is orchestrated by the caller (football_server.py),
-exactly like server.py owns that step for the NBA model.
+exactly like nba_server.py owns that step for the NBA model.
 
 All functions take match/team data as plain dicts/lists rather than
 fetching anything themselves -- the caller (football_server.py) owns
@@ -350,7 +350,7 @@ def predict_team_next_match(team_id: int, opponent_id: int, is_home: bool,
     Single-team-perspective prediction for `team_id`'s next match against
     `opponent_id`. `context`, if given, is `{"forFactor":, "againstFactor":}`
     -- already clamped by the caller (see football_server.py's evidence-gated
-    Gemini refinement, mirroring server.py's NBA pattern).
+    Gemini refinement, mirroring nba_server.py's NBA pattern).
     """
     if is_home:
         lam_h, lam_a, hs, os_, _ = _compute_lambdas(team_id, opponent_id, matches)

@@ -6,7 +6,8 @@ First run: detects existing NBA API data, clears Supabase, re-seeds full season.
 Subsequent runs: incremental update from last known date.
 
 Usage:
-    python refresh.py
+    # Dry run (test only, no DB updates)
+    python nba_refresh.py --dry-run
 """
 
 import os

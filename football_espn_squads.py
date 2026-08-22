@@ -4,7 +4,7 @@ for competitions where football-data.org's /v4/teams/{id} squad endpoint
 isn't available on the current API plan (see football_refresh.py's
 probe_squads_available() -- run football_refresh.py first).
 
-Uses the same free ESPN endpoint espn_refresh.py already relies on for NBA
+Uses the same free ESPN endpoint nba_espn_squads.py already relies on for NBA
 rosters (no API key). Writes into the same football_players /
 football_player_team tables football_refresh.py's sync_squad() would have
 populated, so football_server.py's /football/teams/{id}/squad endpoint

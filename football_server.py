@@ -4,17 +4,17 @@ Football (multi-league) API layer.
 All data is read from an in-memory cache loaded from Supabase at startup
 (_load_football_data(), populated by running football_refresh.py locally) --
 this router never calls football-data.org itself. That mirrors how
-server.py's nba_data_df works for the NBA side: the live process is a pure
+nba_server.py's nba_data_df works for the NBA side: the live process is a pure
 reader, and FOOTBALL_API_KEY is only needed by the local ingestion script,
 not by the deployed backend.
 
 Every loader is independently try/excepted (_load_football_data) because
-this router is imported directly into server.py's single production
+this router is imported directly into nba_server.py's single production
 process (`from football_server import football_router`) -- a problem on
 the football side must never be able to take down the NBA endpoints.
 
 AI refinement follows the same evidence-gated "anchor + clamp" pattern as
-server.py's NBA predictions: football_prediction.py's statistical output is
+nba_server.py's NBA predictions: football_prediction_model.py's statistical output is
 the anchor, and Gemini may only nudge it within a narrow band (wider only
 when grounded news backs the move). See _model_anchored_football().
 """
@@ -218,7 +218,7 @@ def _finished_for_team(team_id: int) -> list[dict]:
     )
 
 
-# ── Gemini refinement ("anchor + clamp", mirroring server.py's NBA pattern) ───
+# ── Gemini refinement ("anchor + clamp", mirroring nba_server.py's NBA pattern) ───
 _gemini_client = None
 FOOTBALL_REFINE_REL_DEFAULT = 0.15
 FOOTBALL_REFINE_REL_NEWS = 0.30
@@ -249,7 +249,7 @@ def _model_anchored_football(model_payload: dict, refineable_keys: list[str], pr
                              fallback_reasoning: str, allow_wide: bool = False) -> dict:
     """
     Ask Gemini to refine the model's numbers and write reasoning, exactly
-    like server.py's _model_anchored() for the NBA side. The clamp is
+    like nba_server.py's _model_anchored() for the NBA side. The clamp is
     evidence-gated: +/-15% by default, widened to +/-30% only when grounded
     news backs the move. Probability fields (win/draw/loss/clean-sheet) are
     never in `refineable_keys` -- those stay pure model output so they keep
@@ -764,7 +764,7 @@ def predict_match_endpoint(match_id: int):
 
 
 # ── Standalone app (local dev only -- production mounts football_router
-#    directly onto server.py's app; see server.py's `app.include_router`) ─────
+#    directly onto nba_server.py's app; see nba_server.py's `app.include_router`) ─────
 _allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 
 app = FastAPI()
