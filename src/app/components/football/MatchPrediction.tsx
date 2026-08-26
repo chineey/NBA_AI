@@ -14,6 +14,7 @@ interface PredictionData {
   utcDate: string;
   status: string;
   stage: string;
+  competitionName?: string;
   homeTeam: TeamInfo;
   awayTeam: TeamInfo;
   actualScore: { home: number | null; away: number | null } | null;
@@ -120,9 +121,14 @@ export function MatchPrediction({ matchId, onClose }: { matchId: number; onClose
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 bg-gray-900/60">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-green-400" />
-            <h3 className="text-white font-semibold">Match Odds</h3>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-green-400" />
+              <h3 className="text-white font-semibold">Match Odds</h3>
+            </div>
+            {data?.competitionName && (
+              <span className="text-[11px] text-gray-400 ml-6 mt-0.5 font-medium">{data.competitionName}</span>
+            )}
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
             <X className="size-5" />

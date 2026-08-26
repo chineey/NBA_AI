@@ -818,9 +818,13 @@ def predict_match_endpoint(match_id: int):
     result = football_prediction_model.predict_fixture(match, home_brief, away_brief, combined)
 
     finished = match.get("status") == "FINISHED" and match.get("full_time_home") is not None
+    comp = _fb_competitions.get(match.get("competition_code"))
+    comp_name = comp.get("name", match.get("competition_code")) if comp else match.get("competition_code")
+
     result.update({
         "matchId": match["id"], "utcDate": match.get("utc_date") or "",
         "status": match.get("status", ""), "stage": match.get("stage", ""),
+        "competitionName": comp_name,
         "actualScore": {"home": match.get("full_time_home"), "away": match.get("full_time_away")} if finished else None,
     })
     return result
