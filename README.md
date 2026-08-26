@@ -46,7 +46,7 @@ Like the NBA side, football data is ingested once into Supabase and served from 
 
 **Data pipeline.** `football_refresh.py` (run manually via `python football_refresh.py`) pulls all 10 free-tier club competitions — Premier League, Bundesliga, Serie A, La Liga, Ligue 1, Champions League, Eredivisie, Primeira Liga, Championship, and Brasileirão — into Supabase: competitions, teams, a full season of matches per competition, standings, and scorer/assist stats. For competitions where squads are restricted under the free API tier, `football_espn_squads.py` (`python football_espn_squads.py`) backfills full rosters from ESPN's public site API, matching player names to reuse IDs and generate synthetic IDs for defenders/keepers. Every football-data.org call goes through a sliding-window throttle capped at 9 requests/minute; a full run is roughly 25-35 minutes. Every upsert is keyed on IDs so re-running is safe.
 
-If the `DEPLOYED_BACKEND_URL` environment variable is set, these scripts automatically hit the backend's `/football/reload` endpoint to reload the memory cache dynamically without a restart.
+If the `DEPLOYED_BACKEND_URL` environment variable is set, these scripts automatically hit the backend's `/football/reload` endpoint to reload the memory cache dynamically without a restart. Additionally, football squads are served via a dynamic cache-aside layer with a 5-minute TTL: on cache miss or expiration, the backend queries Supabase specifically for that team (with safe fallback to startup cache if the DB is down), allowing updates to propagate automatically within 5 minutes without site redeployments.
 
 Same evidence-gated clamp as the NBA side: Gemini may refine the model's goal/assist numbers by ±15% on judgement alone, up to ±30% only when grounded news backs the move — win/draw/loss and clean-sheet probabilities always come straight from the statistical model, never from the LLM.
 
@@ -95,7 +95,7 @@ The real pipeline is `nba_refresh.py`, run manually from a local machine:
 - Scrapes ESPN's public scoreboard + box-score endpoints (no API key, no IP restrictions) for every day since the last known game date — or since October 1st if the table is empty or a new season just rolled over
 - Resolves and upserts player profiles (height/weight/position/jersey/age via `nba_api`'s `CommonPlayerInfo`) and team rosters (via `CommonTeamRoster`) for any newly-seen players
 - Upserts everything into Supabase in batches of 500, keyed on `(player_id, game_id)`. Old rosters are deleted prior to upserts to avoid duplicate or stale player entries.
-- If the `DEPLOYED_BACKEND_URL` environment variable is configured, the script automatically triggers a `GET /reload` request to reload the in-memory dataframe cache on the live backend, meaning new rows are picked up instantly without a redeploy or server restart.
+- If the `DEPLOYED_BACKEND_URL` environment variable is configured, the script automatically triggers a `GET /reload` request to reload the in-memory dataframe cache on the live backend, meaning new rows are picked up instantly without a redeploy or server restart. Additionally, team rosters are served via a dynamic cache-aside layer with a 5-minute TTL: on cache miss or expiration, the backend queries Supabase specifically for that team's roster (falling back to startup cache on failures), allowing updates to propagate to the website within 5 minutes without manual reloads or restarts.
 
 ```bash
 python nba_refresh.py

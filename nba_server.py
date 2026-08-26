@@ -233,6 +233,45 @@ def _load_rosters_from_supabase():
 
 _load_rosters_from_supabase()
 
+# Dynamic cache for rosters (team_abbr -> (timestamp, roster_list))
+_nba_rosters_cache = {}
+
+def _get_nba_roster_with_cache(abbr: str) -> list:
+    global _nba_rosters_cache, _nba_rosters_dict
+    abbr = abbr.upper()
+    now = time.time()
+    
+    # 1. Return from RAM cache if fresh (TTL: 5 minutes)
+    if abbr in _nba_rosters_cache:
+        timestamp, roster = _nba_rosters_cache[abbr]
+        if now - timestamp < 300:
+            return roster
+            
+    # 2. Query Supabase for this specific team roster on cache miss/expiration
+    try:
+        if _sb_url and _sb:
+            resp = _sb.table('nba_team_rosters').select('*').eq('team_abbr', abbr).execute()
+            roster = []
+            for row in resp.data:
+                roster.append({
+                    "id": int(row['player_id']),
+                    "name": str(row['player_name']),
+                    "number": str(row.get('jersey', '') or '').strip(),
+                    "position": str(row.get('position', '') or '').strip(),
+                    "height": str(row.get('height', '') or '').strip(),
+                    "weight": str(row.get('weight', '') or '').strip(),
+                })
+            _nba_rosters_cache[abbr] = (now, roster)
+            # Synchronize with the global dict fallback
+            _nba_rosters_dict[abbr] = roster
+            return roster
+    except Exception as e:
+        print(f"Failed to dynamically load roster for team {abbr} from Supabase: {e}")
+        
+    # 3. Fall back to static startup cache if DB query fails
+    return _nba_rosters_dict.get(abbr, [])
+
+
 # Protect runtime requests from infinite external socket hangs
 import socket
 socket.setdefaulttimeout(3.0)
@@ -605,11 +644,12 @@ def manual_refresh():
 
 @app.get("/reload")
 def reload_data():
-    global nba_data_df, HAS_TOV
+    global nba_data_df, HAS_TOV, _nba_rosters_cache
     nba_data_df = _load_from_supabase()
     HAS_TOV = 'TOV' in nba_data_df.columns
     _load_profiles_from_supabase()
     _load_rosters_from_supabase()
+    _nba_rosters_cache.clear()
     return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict), "rosters": len(_nba_rosters_dict)}
 
 
@@ -635,13 +675,14 @@ def get_team_roster(abbr: str):
         raise HTTPException(status_code=404, detail="Team not found")
 
     # 1. Try local memory database cache first (official rosters synced from Supabase)
-    if abbr in _nba_rosters_dict:
+    roster = _get_nba_roster_with_cache(abbr)
+    if roster:
         return {
             "abbr": abbr,
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
-            "players": _nba_rosters_dict[abbr],
+            "players": roster,
         }
 
     # 2. Try deriving roster from game logs in memory as fallback

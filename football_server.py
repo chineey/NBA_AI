@@ -176,6 +176,93 @@ try:
 except Exception as e:
     print(f"[football] Startup load failed entirely, football endpoints will be empty: {e}")
 
+# Dynamic cache for squads (team_id -> (timestamp, squad_list))
+_fb_squads_cache = {}
+
+def _get_football_squad_with_cache(team_id: int) -> list:
+    global _fb_squads_cache, _fb_player_team, _fb_players
+    import time
+    now = time.time()
+    
+    # 1. Return from RAM cache if fresh (TTL: 5 minutes)
+    if team_id in _fb_squads_cache:
+        timestamp, squad = _fb_squads_cache[team_id]
+        if now - timestamp < 300:
+            return squad
+            
+    # 2. Query Supabase dynamically for this specific team's squad
+    try:
+        sb = _get_sb_client()
+        if sb:
+            # Fetch players mapped to this team
+            links_resp = sb.table("football_player_team").select("*").eq("team_id", team_id).execute()
+            links = links_resp.data or []
+            
+            if links:
+                player_ids = [l["player_id"] for l in links]
+                # Fetch player profiles for matches
+                players_resp = sb.table("football_players").select("*").in_("id", player_ids).execute()
+                players_dict = {r["id"]: r for r in players_resp.data or []}
+                
+                squad = []
+                for s in links:
+                    p = players_dict.get(s["player_id"])
+                    if not p:
+                        continue
+                    squad.append({
+                        "id": p["id"],
+                        "name": p.get("name", ""),
+                        "position": s.get("position") or p.get("position", ""),
+                        "nationality": p.get("nationality", ""),
+                        "dateOfBirth": p.get("date_of_birth") or "",
+                        "age": _age_from_dob(p.get("date_of_birth")),
+                    })
+                _fb_squads_cache[team_id] = (now, squad)
+                
+                # Update local startup cache lists for consistency
+                for s in links:
+                    p = players_dict.get(s["player_id"])
+                    if p:
+                        _fb_players[p["id"]] = p
+                _fb_player_team[team_id] = links
+                
+                return squad
+    except Exception as e:
+        print(f"Failed to dynamically load football squad for team {team_id} from Supabase: {e}")
+        
+    # 3. Fall back to static startup cache (and scorer fallback logic) if DB query failed or returned nothing
+    squad_rows = _fb_player_team.get(team_id, [])
+    squad = []
+    if squad_rows:
+        for s in squad_rows:
+            p = _fb_players.get(s["player_id"])
+            if not p:
+                continue
+            squad.append({
+                "id": p["id"],
+                "name": p.get("name", ""),
+                "position": s.get("position") or p.get("position", ""),
+                "nationality": p.get("nationality", ""),
+                "dateOfBirth": p.get("date_of_birth") or "",
+                "age": _age_from_dob(p.get("date_of_birth")),
+            })
+    else:
+        # Fall back to scorers/assisters only
+        for r in _fb_player_stats_by_team.get(team_id, []):
+            p = _fb_players.get(r["player_id"])
+            if not p:
+                continue
+            squad.append({
+                "id": p["id"],
+                "name": p.get("name", ""),
+                "position": p.get("position", ""),
+                "nationality": p.get("nationality", ""),
+                "dateOfBirth": p.get("date_of_birth") or "",
+                "age": _age_from_dob(p.get("date_of_birth")),
+            })
+            
+    return squad
+
 
 # ── Small helpers ──────────────────────────────────────────────────────────────
 def _fold(s: str) -> str:
@@ -321,7 +408,9 @@ football_router = APIRouter()
 def football_reload():
     """Manual re-load of the in-memory cache from Supabase (e.g. after running
     football_refresh.py without restarting the server)."""
+    global _fb_squads_cache
     counts = _load_football_data()
+    _fb_squads_cache.clear()
     return {"status": "done", "counts": counts}
 
 
@@ -517,33 +606,7 @@ def team_squad(team_id: int):
     if not team:
         raise HTTPException(404, "Team not found.")
 
-    squad_rows = _fb_player_team.get(team_id, [])
-    squad = []
-    if squad_rows:
-        for s in squad_rows:
-            p = _fb_players.get(s["player_id"])
-            if not p:
-                continue
-            squad.append({
-                "id": p["id"], "name": p.get("name", ""),
-                "position": s.get("position") or p.get("position", ""),
-                "nationality": p.get("nationality", ""),
-                "dateOfBirth": p.get("date_of_birth") or "",
-                "age": _age_from_dob(p.get("date_of_birth")),
-            })
-    else:
-        # Full-squad endpoint wasn't available on this API plan when
-        # football_refresh.py ran -- fall back to scorers/assisters only.
-        for r in _fb_player_stats_by_team.get(team_id, []):
-            p = _fb_players.get(r["player_id"])
-            if not p:
-                continue
-            squad.append({
-                "id": p["id"], "name": p.get("name", ""),
-                "position": p.get("position", ""), "nationality": p.get("nationality", ""),
-                "dateOfBirth": p.get("date_of_birth") or "",
-                "age": _age_from_dob(p.get("date_of_birth")),
-            })
+    squad = _get_football_squad_with_cache(team_id)
 
     return {
         "id": team["id"], "name": team.get("name", ""), "shortName": _team_short(team),
