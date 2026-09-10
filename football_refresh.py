@@ -292,8 +292,9 @@ def main():
                   "/football/teams/{id}/squad will fall back to scorer-derived rosters.")
 
     print("Football refresh complete.")
-
     deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
+    local_url = os.getenv("LOCAL_BACKEND_URL", "http://localhost:8000")
+    # Try deployed backend first (if configured), otherwise attempt a local reload.
     if deployed_url:
         print(f"Triggering cache reload on deployed backend: {deployed_url}...")
         try:
@@ -302,6 +303,18 @@ def main():
             print(f"    Football reload response: {resp.status_code} - {resp.json()}")
         except Exception as e:
             print(f"    Failed to trigger reload on deployed backend: {e}")
+    else:
+        print(f"No DEPLOYED_BACKEND_URL set; attempting local reload at {local_url}...")
+        try:
+            local_target = local_url.rstrip("/")
+            resp = requests.get(f"{local_target}/football/reload", timeout=3)
+            try:
+                body = resp.json()
+            except Exception:
+                body = resp.text
+            print(f"    Local reload response: {resp.status_code} - {body}")
+        except Exception as e:
+            print(f"    Local reload failed (no running backend?): {e}")
 
 
 if __name__ == "__main__":

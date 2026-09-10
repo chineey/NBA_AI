@@ -8,6 +8,13 @@ Subsequent runs: incremental update from last known date.
 Usage:
     # Dry run (test only, no DB updates)
     python nba_refresh.py --dry-run
+
+    # Skip game fetching and only sync specific team roster (useful for testing roster sync)
+    python nba_refresh.py --team BOS --skip-games --dry-run
+
+    # Skip updating rosters
+    python nba_refresh.py --skip-rosters
+    python nba_refresh.py --skip-games
 """
 
 import os
@@ -94,11 +101,21 @@ def _get(session, url, params, timeout=45, retries=3) -> requests.Response:
             resp = session.get(url, params=params, timeout=timeout)
             resp.raise_for_status()
             return resp
-        except Exception as e:
+        except requests.exceptions.HTTPError as e:
+            # Do not retry on 4xx client errors (e.g. 403 Forbidden, 404 Not Found)
+            if e.response is not None and 400 <= e.response.status_code < 500:
+                raise
             if attempt < retries - 1:
                 time.sleep(10)
             else:
                 raise
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < retries - 1:
+                time.sleep(10)
+            else:
+                raise
+        except Exception as e:
+            raise
 
 
 def get_completed_game_ids(session, date_str: str) -> list:
@@ -204,7 +221,7 @@ def fetch_date_range(session, start: date, end: date) -> list:
     return all_rows
 
 
-def update_player_profiles(sb, new_rows):
+def update_player_profiles(sb, new_rows, dry_run=False):
     """
     For new players in the scraped game logs, resolve official IDs, fetch profile, and upsert.
     Skips already cached profiles to save API requests.
@@ -330,19 +347,22 @@ def update_player_profiles(sb, new_rows):
             print(f"    Failed to parse {name}: {e}")
 
     if profiles_to_upsert:
-        print(f"Upserting {len(profiles_to_upsert)} profiles to Supabase...")
-        for i in range(0, len(profiles_to_upsert), 100):
-            batch = profiles_to_upsert[i:i+100]
-            try:
-                sb.table('nba_player_profiles').upsert(batch).execute()
-                print(f"  {min(i + 100, len(profiles_to_upsert))}/{len(profiles_to_upsert)} profiles upserted")
-            except Exception as e:
-                print(f"    Upsert batch failed: {e}")
+        if dry_run:
+            print(f"[DRY RUN] Would upsert {len(profiles_to_upsert)} profiles to Supabase.")
+        else:
+            print(f"Upserting {len(profiles_to_upsert)} profiles to Supabase...")
+            for i in range(0, len(profiles_to_upsert), 100):
+                batch = profiles_to_upsert[i:i+100]
+                try:
+                    sb.table('nba_player_profiles').upsert(batch).execute()
+                    print(f"  {min(i + 100, len(profiles_to_upsert))}/{len(profiles_to_upsert)} profiles upserted")
+                except Exception as e:
+                    print(f"    Upsert batch failed: {e}")
 
 
-def update_team_rosters(sb):
+def update_team_rosters(sb, target_team=None, dry_run=False):
     """
-    Fetch official rosters for all 30 teams from CommonTeamRoster and upsert to Supabase.
+    Fetch official rosters for all 30 teams (or a targeted one) from CommonTeamRoster and upsert to Supabase.
     """
     from nba_api.stats.endpoints import CommonTeamRoster
     import time
@@ -377,8 +397,17 @@ def update_team_rosters(sb):
         'DET': 1610612765, 'CHA': 1610612766
     }
 
-    roster_rows = []
-    for abbr in TEAMS:
+    if target_team:
+        target_team = target_team.upper()
+        if target_team in TEAMS:
+            teams_to_process = [target_team]
+        else:
+            print(f"Invalid target team: {target_team}")
+            return
+    else:
+        teams_to_process = TEAMS
+
+    for abbr in teams_to_process:
         team_id = TEAM_IDS[abbr]
         print(f"  Fetching roster for {abbr}...")
         df_roster = None
@@ -392,8 +421,9 @@ def update_team_rosters(sb):
                 print(f"    Attempt failed for {abbr} (headers={'custom' if headers else 'default'}): {e}")
 
         if df_roster is not None and not df_roster.empty:
+            team_roster_rows = []
             for _, row in df_roster.iterrows():
-                roster_rows.append({
+                team_roster_rows.append({
                     "team_abbr": abbr,
                     "player_id": int(row.get("PLAYER_ID", 0)),
                     "player_name": str(row.get("PLAYER", "")),
@@ -402,27 +432,27 @@ def update_team_rosters(sb):
                     "height": str(row.get("HEIGHT", "")).strip(),
                     "weight": str(row.get("WEIGHT", "")).strip(),
                 })
+            
+            if team_roster_rows:
+                if dry_run:
+                    print(f"    [DRY RUN] Would upsert {len(team_roster_rows)} roster players for {abbr} to Supabase.")
+                else:
+                    print(f"    Upserting {len(team_roster_rows)} roster players for {abbr} to Supabase...")
+                    try:
+                        # Clear existing roster for ONLY this team
+                        sb.table('nba_team_rosters').delete().eq('team_abbr', abbr).execute()
+                        # Upsert new roster in batches of 100
+                        for i in range(0, len(team_roster_rows), 100):
+                            batch = team_roster_rows[i:i+100]
+                            sb.table('nba_team_rosters').upsert(batch).execute()
+                        print(f"    Roster for {abbr} updated successfully.")
+                    except Exception as e:
+                        print(f"    Failed to update roster for {abbr}: {e}")
         else:
             print(f"    Failed to fetch roster for {abbr} completely.")
 
-    if roster_rows:
-        print("Clearing old rosters from Supabase...")
-        try:
-            sb.table('nba_team_rosters').delete().neq('player_id', 0).execute()
-            print("Rosters cleared.")
-        except Exception as e:
-            print(f"Failed to clear old rosters: {e}")
 
-        print(f"Upserting {len(roster_rows)} roster players to Supabase...")
-        for i in range(0, len(roster_rows), 100):
-            batch = roster_rows[i:i+100]
-            try:
-                sb.table('nba_team_rosters').upsert(batch).execute()
-            except Exception as e:
-                print(f"    Upsert roster batch failed: {e}")
-
-
-def run():
+def run(dry_run: bool = False, skip_rosters: bool = False, target_team: str = None, skip_games: bool = False):
     sb_url = os.getenv("SUPABASE_URL", "")
     sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
     if not sb_url or not sb_key:
@@ -431,10 +461,11 @@ def run():
 
     sb      = create_client(sb_url, sb_key)
     session = requests.Session()
-    session.headers['User-Agent'] = (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-    )
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
 
     print(f"Season: {current_season_label()}")
     print("Loading current data from Supabase...")
@@ -463,42 +494,53 @@ def run():
 
     if is_nba_api:
         print("Detected NBA API data — clearing Supabase and re-seeding from ESPN...")
-        sb.table('nba_player_game_logs').delete().neq('player_id', 0).execute()
+        if dry_run:
+            print("[DRY RUN] Would delete all rows from nba_player_game_logs to re-seed.")
+        else:
+            sb.table('nba_player_game_logs').delete().neq('player_id', 0).execute()
         start = None
 
-    if start is None:
-        start = current_season_start()
-        print(f"Fetching full season from {start.isoformat()} -> {today.isoformat()}...")
+    if skip_games:
+        print("Skipping game logs fetch (--skip-games).")
+        rows = []
     else:
-        print(f"Fetching from {start.isoformat()} -> {today.isoformat()}...")
+        if start is None:
+            start = current_season_start()
+            print(f"Fetching full season from {start.isoformat()} -> {today.isoformat()}...")
+        else:
+            print(f"Fetching from {start.isoformat()} -> {today.isoformat()}...")
 
-    rows = fetch_date_range(session, start, today)
+        rows = fetch_date_range(session, start, today)
 
     # Upsert profiles for new/all players
     try:
-        update_player_profiles(sb, rows)
+        update_player_profiles(sb, rows, dry_run=dry_run)
     except Exception as pe:
         print(f"Failed to update player profiles: {pe}")
 
     # Upsert official team rosters
-    try:
-        update_team_rosters(sb)
-    except Exception as re:
-        print(f"Failed to update team rosters: {re}")
+    if not skip_rosters:
+        try:
+            update_team_rosters(sb, target_team=target_team, dry_run=dry_run)
+        except Exception as re:
+            print(f"Failed to update team rosters: {re}")
 
     if not rows:
         print("No new games found.")
         return
 
-    print(f"Upserting {len(rows)} rows to Supabase...")
-    for i in range(0, len(rows), 500):
-        sb.table('nba_player_game_logs').upsert(rows[i:i + 500]).execute()
-        print(f"  {min(i + 500, len(rows))}/{len(rows)} done")
+    if dry_run:
+        print(f"[DRY RUN] Would upsert {len(rows)} game log rows to Supabase.")
+    else:
+        print(f"Upserting {len(rows)} rows to Supabase...")
+        for i in range(0, len(rows), 500):
+            sb.table('nba_player_game_logs').upsert(rows[i:i + 500]).execute()
+            print(f"  {min(i + 500, len(rows))}/{len(rows)} done")
 
     print("Refresh complete.")
 
     deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
-    if deployed_url:
+    if deployed_url and not dry_run:
         print(f"Triggering cache reload on deployed backend: {deployed_url}...")
         try:
             deployed_url = deployed_url.rstrip("/")
@@ -509,4 +551,12 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser(description="Refresh NBA game logs and rosters.")
+    parser.add_argument("--dry-run", action="store_true", help="Fetch data without writing to Supabase.")
+    parser.add_argument("--skip-rosters", action="store_true", help="Skip updating team rosters.")
+    parser.add_argument("--skip-games", action="store_true", help="Skip fetching new game logs.")
+    parser.add_argument("--team", type=str, help="Only update the roster for this specific team (e.g. BOS).")
+    args = parser.parse_args()
+
+    run(dry_run=args.dry_run, skip_rosters=args.skip_rosters, target_team=args.team, skip_games=args.skip_games)
