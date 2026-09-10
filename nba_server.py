@@ -1446,4 +1446,8 @@ Do not use markdown. Do not wrap in code blocks.
 
 # ── Football routes ───────────────────────────────────────────────────────────
 from football_server import football_router
+from football_server import football_router
+from football_refresh_cronjob import router as football_refresh_router
 app.include_router(football_router)
+app.include_router(football_router)
+app.include_router(football_refresh_router)
