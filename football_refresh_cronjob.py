@@ -8,12 +8,18 @@ job -- so the original script stays exactly as it was and is still safe
 to run standalone from the CLI.
 
 Wire it into your app with:
-    from football_refresh_api import router as football_refresh_router
+    from football_refresh_cronjob import router as football_refresh_router
     app.include_router(football_refresh_router)
 
 Env vars needed (on top of what football_refresh.py already needs --
 SUPABASE_URL, SUPABASE_SERVICE_KEY, FOOTBALL_API_KEY):
     REFRESH_TOKEN=<a long random string you generate once>
+
+After the Supabase upserts finish, this reloads football_server.py's
+in-memory cache directly (a plain function call, not an HTTP request) --
+that only works because this router and football_server.py's football_router
+are mounted in the same process (nba_server.py). DEPLOYED_BACKEND_URL /
+LOCAL_BACKEND_URL are not used here.
 
 Cron:
     0 6 * * * curl -X POST "https://your-backend/footballrefresh" \
@@ -48,32 +54,24 @@ from football_refresh import (
 
 
 def _trigger_backend_reload():
-    deployed_url = os.getenv("DEPLOYED_BACKEND_URL")
-    local_url = os.getenv("LOCAL_BACKEND_URL", "http://localhost:8000")
-    if deployed_url:
-        print(f"Triggering cache reload on deployed backend: {deployed_url}...")
-        try:
-            deployed_url = deployed_url.rstrip("/")
-            resp = requests.get(f"{deployed_url}/football/reload", timeout=15)
-            try:
-                body = resp.json()
-            except Exception:
-                body = resp.text
-            print(f"    Football reload response: {resp.status_code} - {body}")
-        except Exception as e:
-            print(f"    Failed to trigger reload on deployed backend: {e}")
-    else:
-        print(f"No DEPLOYED_BACKEND_URL set; attempting local reload at {local_url}...")
-        try:
-            local_target = local_url.rstrip("/")
-            resp = requests.get(f"{local_target}/football/reload", timeout=3)
-            try:
-                body = resp.json()
-            except Exception:
-                body = resp.text
-            print(f"    Local reload response: {resp.status_code} - {body}")
-        except Exception as e:
-            print(f"    Local reload failed (no running backend?): {e}")
+    """Reload football_server.py's in-memory cache directly, in-process.
+
+    This refresh job runs inside the same deployed process as
+    football_server.py (both are mounted on nba_server.py's app), so there
+    is no need to make an HTTP round-trip back to ourselves -- that was only
+    ever correct when football_refresh.py was a separate local script
+    talking to a different deployed process. Calling the loader directly
+    avoids depending on DEPLOYED_BACKEND_URL/LOCAL_BACKEND_URL or on
+    self-networking working inside the container at all."""
+    try:
+        import football_server
+        counts = football_server._load_football_data()
+        football_server._fb_squads_cache.clear()
+        print(f"    In-process reload done: {counts}")
+        return counts
+    except Exception as e:
+        print(f"    In-process reload failed: {e}")
+        return None
 
 
 def run_refresh(codes: list[str], skip_squads: bool = False) -> dict:
@@ -130,7 +128,7 @@ def run_refresh(codes: list[str], skip_squads: bool = False) -> dict:
                   "/football/teams/{id}/squad will fall back to scorer-derived rosters.")
 
     print("Football refresh complete.")
-    _trigger_backend_reload()
+    reload_counts = _trigger_backend_reload()
 
     return {
         "competitions_requested": codes,
@@ -139,6 +137,7 @@ def run_refresh(codes: list[str], skip_squads: bool = False) -> dict:
         "squads_available": squads_available,
         "squads_synced": squads_synced,
         "squads_failed": squads_failed,
+        "reload_counts": reload_counts,
     }
 
 
