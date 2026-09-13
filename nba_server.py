@@ -522,29 +522,57 @@ def _parse_dates(series: pd.Series) -> pd.Series:
     return parsed.dt.normalize()
 
 
-def get_next_game(team_abbr: str) -> dict | None:
-    # ── 1. Try the live scoreboard first (covers today's games) ──────────────
+# ── Live scoreboard cache ───────────────────────────────────────────────────
+_scoreboard_cache: list | None = None
+_scoreboard_cache_time: float = 0.0
+SCOREBOARD_TTL_OK = 30       # live game data changes fast; refresh every 30s
+SCOREBOARD_TTL_FAIL = 300    # if nba.com is blocking us, back off for 5 min
+
+
+def _fetch_live_scoreboard() -> list:
+    """Fetch today's live scoreboard games, cached with separate TTLs for
+    success (short, since scores are live) and failure (long, so a block
+    doesn't cost every single request a timeout)."""
+    global _scoreboard_cache, _scoreboard_cache_time
+    now = time.time()
+    ttl = SCOREBOARD_TTL_OK if _scoreboard_cache is not None else SCOREBOARD_TTL_FAIL
+    if _scoreboard_cache is not None and (now - _scoreboard_cache_time) < ttl:
+        return _scoreboard_cache
+    if _scoreboard_cache is None and (now - _scoreboard_cache_time) < SCOREBOARD_TTL_FAIL:
+        return []  # recent failure, still backing off
+
     try:
         from nba_api.live.nba.endpoints import scoreboard as live_sb
         board = live_sb.ScoreBoard()
         games = board.get_dict().get('scoreboard', {}).get('games', [])
-        today_str = _date.today().isoformat()
-        for g in games:
-            ht = g.get('homeTeam', {}).get('teamTricode', '')
-            at = g.get('awayTeam', {}).get('teamTricode', '')
-            if team_abbr in (ht, at):
-                is_home = ht == team_abbr
-                opponent = at if is_home else ht
-                game_time = g.get('gameTimeUTC', '')
-                return {
-                    "gameDate": today_str,
-                    "opponent": opponent,
-                    "homeAway": "HOME" if is_home else "AWAY",
-                    "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",
-                    "gameTimeUTC": game_time,
-                }
+        _scoreboard_cache = games
+        _scoreboard_cache_time = now
+        return games
     except Exception as e:
         print(f"Live scoreboard lookup failed: {e}")
+        _scoreboard_cache = None
+        _scoreboard_cache_time = now
+        return []
+
+
+def get_next_game(team_abbr: str) -> dict | None:
+    # ── 1. Try the live scoreboard first (covers today's games) ──────────────
+    games = _fetch_live_scoreboard()
+    today_str = _date.today().isoformat()
+    for g in games:
+        ht = g.get('homeTeam', {}).get('teamTricode', '')
+        at = g.get('awayTeam', {}).get('teamTricode', '')
+        if team_abbr in (ht, at):
+            is_home = ht == team_abbr
+            opponent = at if is_home else ht
+            game_time = g.get('gameTimeUTC', '')
+            return {
+                "gameDate": today_str,
+                "opponent": opponent,
+                "homeAway": "HOME" if is_home else "AWAY",
+                "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",
+                "gameTimeUTC": game_time,
+            }
 
     # ── 2. Fall back to season schedules: current season, then next season ───
     # The next-season lookup makes upcoming games appear as soon as the NBA
@@ -1445,7 +1473,6 @@ Do not use markdown. Do not wrap in code blocks.
 
 
 # ── Football routes ───────────────────────────────────────────────────────────
-from football_server import football_router
 from football_server import football_router
 from football_refresh_cronjob import router as football_refresh_router
 app.include_router(football_router)
