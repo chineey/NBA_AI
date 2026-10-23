@@ -39,9 +39,9 @@ function BallLoader({ label }: { label: string }) {
 
 export default function App() {
   const { user, signOut, loading: authLoading } = useAuth();
-  const [sport, setSport] = useState<Sport>('nba');
+  const [sport, setSport] = useState<Sport>('football');
   const [mode, setMode] = useState<Mode>('players');
-  const [footballSection, setFootballSection] = useState<FootballSection>('browse');
+  const [footballSection, setFootballSection] = useState<FootballSection>('predictions');
 
   // Players mode
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -275,11 +275,15 @@ export default function App() {
               <h1 className="font-display text-base sm:text-lg text-white font-bold tracking-tight leading-none truncate">
                 {isNba
                   ? 'NBA Analysis'
+                  : footballSection === 'predictions'
+                  ? 'Match Predictions'
+                  : footballSection === 'fixtures'
+                  ? 'Fixtures & Results'
                   : footballSection === 'scorers'
                   ? 'Top Scorers'
                   : footballSection === 'assists'
                   ? 'Top Assists'
-                  : 'Football Analysis'}
+                  : 'Browse Competitions'}
               </h1>
             </div>
 

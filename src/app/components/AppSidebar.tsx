@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown, Grid3x3, Target, Zap, CalendarDays } from 'lucide-react';
+import { TrendingUp, User, Shield, LogOut, Sparkles, ChevronsUpDown, Grid3x3, Target, Zap, CalendarDays, Flame } from 'lucide-react';
 import type { FootballSection } from '@/app/components/football/FootballApp';
 import {
   Sidebar,
@@ -148,6 +148,17 @@ export function AppSidebar({ sport, setSport, mode, switchMode, footballSection,
             <SidebarGroupLabel>Football</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={footballSection === 'predictions'}
+                    onClick={() => setFootballSection('predictions')}
+                    tooltip="Match Predictions"
+                    className="data-[active=true]:bg-white/10 data-[active=true]:text-white font-medium"
+                  >
+                    <Flame className="text-emerald-400" />
+                    <span>Predictions</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={footballSection === 'browse'}

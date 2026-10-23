@@ -799,10 +799,101 @@ def player_detail(player_id: int, team_id: int = Query(...), competition_code: s
     }
 
 
+import football_analysis
+
+
+def _build_live_match_obj(m: dict) -> dict | None:
+    home = _fb_teams.get(m.get("home_team_id"))
+    away = _fb_teams.get(m.get("away_team_id"))
+    if not home or not away:
+        return None
+    comp = _fb_competitions.get(m.get("competition_code"))
+    home_matches = _fb_matches_by_team.get(home["id"], [])
+    away_matches = _fb_matches_by_team.get(away["id"], [])
+    hs = football_prediction_model.team_strength(home["id"], home_matches)
+    as_ = football_prediction_model.team_strength(away["id"], away_matches)
+    
+    # Squad starting XI if available
+    home_squad = _get_football_squad_with_cache(home["id"])
+    away_squad = _get_football_squad_with_cache(away["id"])
+    
+    home_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(home_squad[:11])]
+    away_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(away_squad[:11])]
+
+    return {
+        "id": m["id"],
+        "utc_date": m.get("utc_date") or "",
+        "status": m.get("status", "SCHEDULED"),
+        "matchday": m.get("matchday"),
+        "competition_code": m.get("competition_code", ""),
+        "competition_name": comp.get("name", m.get("competition_code", "")) if comp else m.get("competition_code", ""),
+        "competition_emblem": comp.get("emblem", "") if comp else "",
+        "home_team": {
+            "id": home["id"], "name": home.get("name", ""), "short_name": _team_short(home),
+            "crest": home.get("crest", ""), "tla": home.get("tla", "")
+        },
+        "away_team": {
+            "id": away["id"], "name": away.get("name", ""), "short_name": _team_short(away),
+            "crest": away.get("crest", ""), "tla": away.get("tla", "")
+        },
+        "home_form": hs,
+        "away_form": as_,
+        "venue": home.get("venue", ""),
+        "home_lineup": {"formation": "4-3-3", "players": home_xi},
+        "away_lineup": {"formation": "4-2-3-1", "players": away_xi},
+        "stakes": f"{comp.get('name', 'League')} regular season fixture." if comp else "League match."
+    }
+
+
+@football_router.get("/football/predictions")
+def list_predictions(
+    competition_code: str = Query(default="ALL"),
+    limit: int = Query(default=50, le=100)
+):
+    """Returns upcoming match predictions with full 1X2 probabilities for the homepage."""
+    live_objs = []
+    if _fb_matches:
+        for m in _fb_matches:
+            if m.get("status") in ("SCHEDULED", "TIMED"):
+                obj = _build_live_match_obj(m)
+                if obj:
+                    live_objs.append(obj)
+    return football_analysis.get_all_predictions(
+        competition_code=competition_code,
+        limit=limit,
+        live_matches=live_objs if live_objs else None
+    )
+
+
+@football_router.get("/football/matches/{match_id}/analysis")
+def match_analysis_endpoint(match_id: int):
+    """Full Section 5 deep-dive analysis (recent form, home/away splits, H2H,
+    goals/defense, injuries, projected lineups with accuracy disclaimer, and key factors)."""
+    live_match = None
+    if _fb_matches:
+        raw = next((m for m in _fb_matches if m.get("id") == match_id), None)
+        if raw:
+            live_match = _build_live_match_obj(raw)
+    
+    analysis = football_analysis.get_match_full_analysis(match_id, live_match)
+    if not analysis:
+        raise HTTPException(404, "Match analysis unavailable.")
+    return analysis
+
+
 @football_router.get("/football/matches/{match_id}/predict")
 def predict_match_endpoint(match_id: int):
-    """Odds-style market prediction for a specific fixture (win/draw/win,
-    over/under, BTTS), used by the Fixtures tab's per-match modal."""
+    """Odds-style market prediction + Section 5 analysis for a specific fixture."""
+    live_match = None
+    if _fb_matches:
+        raw = next((m for m in _fb_matches if m.get("id") == match_id), None)
+        if raw:
+            live_match = _build_live_match_obj(raw)
+            
+    analysis = football_analysis.get_match_full_analysis(match_id, live_match)
+    if analysis:
+        return analysis
+        
     match = next((m for m in _fb_matches if m["id"] == match_id), None)
     if not match:
         raise HTTPException(404, "Match not found.")

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
 import { Badge } from '@/app/components/ui/badge';
 import { Skeleton } from '@/app/components/ui/skeleton';
-import { MatchPrediction } from './MatchPrediction';
+import { MatchAnalysisModal } from './MatchAnalysisModal';
 
 type Competition = { id: number | null; code: string; name: string; emblem: string; area: string };
 
@@ -201,7 +201,7 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
       </SectionCard>
 
       {openMatchId !== null && (
-        <MatchPrediction matchId={openMatchId} onClose={() => setOpenMatchId(null)} />
+        <MatchAnalysisModal matchId={openMatchId} onClose={() => setOpenMatchId(null)} />
       )}
     </>
   );

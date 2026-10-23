@@ -9,10 +9,11 @@ import { FootballPlayerView } from './FootballPlayerView';
 import { FootballPlayerSearch, type PlayerSearchResult } from './FootballPlayerSearch';
 import { FootballLeaders, type LeaderEntry } from './FootballLeaders';
 import { FootballFixtures } from './FootballFixtures';
+import { FootballPredictions } from './FootballPredictions';
 
-export type FootballSection = 'browse' | 'fixtures' | 'scorers' | 'assists';
+export type FootballSection = 'predictions' | 'fixtures' | 'browse' | 'scorers' | 'assists';
 
-type View = 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders' | 'fixtures';
+type View = 'predictions' | 'browse' | 'competition-teams' | 'team' | 'player' | 'leaders' | 'fixtures';
 type BrowseMode = 'competitions' | 'all-teams';
 
 type TeamRef = { id: number; name: string; shortName: string; tla: string; crest: string };
@@ -31,10 +32,13 @@ type Props = {
 };
 
 const defaultViewForSection = (section: FootballSection): View =>
-  section === 'browse' ? 'browse' : section === 'fixtures' ? 'fixtures' : 'leaders';
+  section === 'predictions' ? 'predictions'
+  : section === 'fixtures' ? 'fixtures'
+  : section === 'browse' ? 'browse'
+  : 'leaders';
 
 export function FootballApp({ section }: Props) {
-  const [view, setView] = useState<View>('browse');
+  const [view, setView] = useState<View>('predictions');
   const [browseMode, setBrowseMode] = useState<BrowseMode>('competitions');
 
   const [competitionCode, setCompetitionCode] = useState('');
@@ -133,6 +137,15 @@ export function FootballApp({ section }: Props) {
   };
 
   const mainContent = () => {
+    if (view === 'predictions') {
+      return (
+        <FootballPredictions
+          onSelectTeam={(team, compCode, compName) => handleSelectTeam(team, compCode, compName)}
+          onSelectCompetition={handleSelectCompetition}
+        />
+      );
+    }
+
     if (view === 'player' && selectedPlayer) {
       return (
         <FootballPlayerView
