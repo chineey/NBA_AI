@@ -239,6 +239,21 @@ def _load_rosters_from_supabase(conn=None):
 
 _load_rosters_from_supabase(conn=_startup_conn)
 
+_nba_schedule_list: list[dict] = []
+
+def _load_schedule_from_supabase(conn=None):
+    global _nba_schedule_list
+    try:
+        if conn is not None or get_database_url() or (_sb_url and _sb):
+            rows = fetch_table_rows('nba_schedule', sb_client=_sb, conn=conn)
+            rows.sort(key=lambda r: str(r.get('game_date') or ''))
+            _nba_schedule_list = rows
+            print(f"Loaded {len(_nba_schedule_list)} schedule games from Supabase.")
+    except Exception as e:
+        print(f"Failed to load NBA schedule from Supabase (using live fallback): {e}")
+
+_load_schedule_from_supabase(conn=_startup_conn)
+
 if _startup_conn is not None:
     _startup_conn_ctx.__exit__(None, None, None)
 _startup_conn = None
@@ -579,7 +594,25 @@ def get_next_game(team_abbr: str) -> dict | None:
                 "gameTimeUTC": game_time,
             }
 
-    # ── 2. Fall back to season schedules: current season, then next season ───
+    # ── 2. Check Supabase-cached season schedule (instant in-memory lookup) ──
+    for row in _nba_schedule_list:
+        gd = str(row.get('game_date') or '')[:10]
+        if gd < today_str:
+            continue
+        ht = str(row.get('home_team') or '').upper()
+        at = str(row.get('away_team') or '').upper()
+        if team_abbr in (ht, at):
+            is_home = ht == team_abbr
+            opponent = at if is_home else ht
+            return {
+                "gameDate": gd,
+                "opponent": opponent,
+                "homeAway": "HOME" if is_home else "AWAY",
+                "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",
+                "gameTimeUTC": str(row.get('game_time_utc') or ''),
+            }
+
+    # ── 3. Fall back to live NBA API season schedules if DB table is empty ───
     # The next-season lookup makes upcoming games appear as soon as the NBA
     # announces fixtures (preseason rows show up in ScheduleLeagueV2 by August).
     for season in (_current_season(), _next_season()):
@@ -768,8 +801,9 @@ def reload_data():
         HAS_TOV = 'TOV' in nba_data_df.columns
         _load_profiles_from_supabase(conn=conn)
         _load_rosters_from_supabase(conn=conn)
+        _load_schedule_from_supabase(conn=conn)
     _nba_rosters_cache.clear()
-    return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict), "rosters": len(_nba_rosters_dict)}
+    return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict), "rosters": len(_nba_rosters_dict), "schedule": len(_nba_schedule_list)}
 
 
 @app.get("/teams")
