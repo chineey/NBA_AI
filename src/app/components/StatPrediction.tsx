@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { Bars, PillTabs, StatBox } from './DesignPrimitives';
+import { Bars, PillTabs, PredictionStatCard, StatBox } from './DesignPrimitives';
 
 type Game = {
   gameDate: string;
@@ -138,6 +138,17 @@ export function StatPrediction({ player }: { player: Player }) {
       ? prediction.reb_predicted
       : prediction.ast_predicted;
 
+  const recentMean = (key: 'pts' | 'ast' | 'reb' | 'fg3m' | 'stl' | 'blk') => {
+    if (!player.recentGames.length) return 0;
+    return player.recentGames.reduce((s, g) => s + (g[key] ?? 0), 0) / player.recentGames.length;
+  };
+  const avgPts = player.seasonAvg?.pts ?? recentMean('pts');
+  const avgAst = player.seasonAvg?.ast ?? recentMean('ast');
+  const avgReb = player.seasonAvg?.reb ?? recentMean('reb');
+  const avgFg3m = recentMean('fg3m');
+  const avgStl = recentMean('stl');
+  const avgBlk = recentMean('blk');
+
   return (
     <div className="space-y-6 min-w-0">
       {/* Bar chart + Season Avg line */}
@@ -224,30 +235,74 @@ export function StatPrediction({ player }: { player: Player }) {
           </div>
         )}
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 stagger">
-          <StatBox
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 stagger">
+          <PredictionStatCard
             label="PTS"
             value={hasGenerated ? prediction.pts_predicted.toFixed(1) : '—'}
-            hint={hasGenerated ? `${prediction.pts_low.toFixed(1)}–${prediction.pts_high.toFixed(1)}` : undefined}
+            rangeText={hasGenerated ? `${prediction.pts_low.toFixed(1)}–${prediction.pts_high.toFixed(1)}` : undefined}
+            avgText={`avg ${avgPts.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.pts_predicted}
+            avg={avgPts}
+            low={prediction.pts_low}
+            high={prediction.pts_high}
+            recentValues={player.recentGames.map((g) => g.pts)}
             accent={hasGenerated}
           />
-          <StatBox
+          <PredictionStatCard
             label="AST"
             value={hasGenerated ? prediction.ast_predicted.toFixed(1) : '—'}
-            hint={hasGenerated ? `${prediction.ast_low.toFixed(1)}–${prediction.ast_high.toFixed(1)}` : undefined}
+            rangeText={hasGenerated ? `${prediction.ast_low.toFixed(1)}–${prediction.ast_high.toFixed(1)}` : undefined}
+            avgText={`avg ${avgAst.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.ast_predicted}
+            avg={avgAst}
+            low={prediction.ast_low}
+            high={prediction.ast_high}
+            recentValues={player.recentGames.map((g) => g.ast)}
           />
-          <StatBox
+          <PredictionStatCard
             label="REB"
             value={hasGenerated ? prediction.reb_predicted.toFixed(1) : '—'}
-            hint={hasGenerated ? `${prediction.reb_low.toFixed(1)}–${prediction.reb_high.toFixed(1)}` : undefined}
+            rangeText={hasGenerated ? `${prediction.reb_low.toFixed(1)}–${prediction.reb_high.toFixed(1)}` : undefined}
+            avgText={`avg ${avgReb.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.reb_predicted}
+            avg={avgReb}
+            low={prediction.reb_low}
+            high={prediction.reb_high}
+            recentValues={player.recentGames.map((g) => g.reb)}
           />
-          <StatBox
+          <PredictionStatCard
             label="FG3M"
             value={hasGenerated ? prediction.fg3m_predicted.toFixed(1) : '—'}
-            hint={hasGenerated ? `${prediction.fg3m_low.toFixed(1)}–${prediction.fg3m_high.toFixed(1)}` : undefined}
+            rangeText={hasGenerated ? `${prediction.fg3m_low.toFixed(1)}–${prediction.fg3m_high.toFixed(1)}` : undefined}
+            avgText={`avg ${avgFg3m.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.fg3m_predicted}
+            avg={avgFg3m}
+            low={prediction.fg3m_low}
+            high={prediction.fg3m_high}
+            recentValues={player.recentGames.map((g) => g.fg3m)}
           />
-          <StatBox label="STL" value={hasGenerated ? prediction.stl_predicted.toFixed(1) : '—'} />
-          <StatBox label="BLK" value={hasGenerated ? prediction.blk_predicted.toFixed(1) : '—'} />
+          <PredictionStatCard
+            label="STL"
+            value={hasGenerated ? prediction.stl_predicted.toFixed(1) : '—'}
+            avgText={`avg ${avgStl.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.stl_predicted}
+            avg={avgStl}
+            recentValues={player.recentGames.map((g) => g.stl)}
+          />
+          <PredictionStatCard
+            label="BLK"
+            value={hasGenerated ? prediction.blk_predicted.toFixed(1) : '—'}
+            avgText={`avg ${avgBlk.toFixed(1)}`}
+            hasGenerated={hasGenerated}
+            predicted={prediction.blk_predicted}
+            avg={avgBlk}
+            recentValues={player.recentGames.map((g) => g.blk)}
+          />
         </div>
 
         <div className="mt-4 rounded-lg bg-secondary p-4 text-sm">

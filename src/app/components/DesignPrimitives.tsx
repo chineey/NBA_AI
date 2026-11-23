@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 
 export function Logo() {
   return (
@@ -46,6 +47,137 @@ export function StatBox({
         {value}
       </div>
       {hint && <div className="mt-1 truncate text-[11px] sm:text-xs text-success">{hint}</div>}
+    </div>
+  );
+}
+
+export function computeStatCall({
+  predicted,
+  avg,
+  low,
+  high,
+  recentValues,
+  isPct = false,
+}: {
+  predicted: number;
+  avg: number;
+  low?: number;
+  high?: number;
+  recentValues?: number[];
+  isPct?: boolean;
+}) {
+  const isOver = predicted >= avg;
+  const line = Math.ceil(avg);
+  const tag = `${isOver ? 'O' : 'U'}${line}${isPct ? '%' : ''}`;
+
+  // Estimate confidence (52%–95%) from projection interval vs avg, blended with recent hit rate.
+  let intervalConf = 62;
+  if (low !== undefined && high !== undefined && high > low) {
+    const span = high - low;
+    const raw = isOver ? (high - avg) / span : (avg - low) / span;
+    intervalConf = Math.max(0.5, Math.min(0.95, raw)) * 100;
+  } else if (recentValues && recentValues.length > 0) {
+    const mean = recentValues.reduce((s, v) => s + v, 0) / recentValues.length;
+    const variance = recentValues.reduce((s, v) => s + (v - mean) ** 2, 0) / recentValues.length;
+    const std = Math.max(Math.sqrt(variance), isPct ? 2 : 0.5);
+    const z = Math.abs(predicted - avg) / std;
+    intervalConf = Math.min(92, 54 + z * 22);
+  }
+
+  let confidence = intervalConf;
+  if (recentValues && recentValues.length > 0) {
+    const hits = recentValues.filter((v) => (isOver ? v >= avg : v < avg)).length;
+    const hitPct = (hits / recentValues.length) * 100;
+    confidence = intervalConf * 0.7 + hitPct * 0.3;
+  }
+
+  return {
+    isOver,
+    line,
+    tag,
+    confidence: Math.round(Math.max(52, Math.min(95, confidence))),
+  };
+}
+
+export function PredictionStatCard({
+  label,
+  value,
+  rangeText,
+  avgText,
+  hasGenerated,
+  predicted,
+  avg,
+  low,
+  high,
+  recentValues,
+  isPct = false,
+  accent,
+}: {
+  label: string;
+  value: string;
+  rangeText?: string;
+  avgText?: string;
+  hasGenerated: boolean;
+  predicted: number;
+  avg: number;
+  low?: number;
+  high?: number;
+  recentValues?: number[];
+  isPct?: boolean;
+  accent?: boolean;
+}) {
+  const showCall = hasGenerated && avg > 0;
+  const call = showCall
+    ? computeStatCall({ predicted, avg, low, high, recentValues, isPct })
+    : null;
+
+  return (
+    <div className="panel flex flex-col justify-between p-3.5 sm:p-4 min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[10px] sm:text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+        {call && (
+          <span
+            className={`num inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+              call.isOver
+                ? 'border-success/35 bg-success/15 text-success'
+                : 'border-accent/35 bg-accent/15 text-accent'
+            }`}
+          >
+            {call.isOver ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
+            {call.tag}
+          </span>
+        )}
+      </div>
+
+      <div className={`num mt-1.5 text-xl sm:text-2xl font-bold ${accent ? 'text-primary' : 'text-foreground'}`}>
+        {value}
+      </div>
+
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="num truncate">{hasGenerated && rangeText ? rangeText : avgText ?? '—'}</span>
+        {hasGenerated && rangeText && avgText && (
+          <span className="num shrink-0 opacity-80">{avgText}</span>
+        )}
+      </div>
+
+      {call && (
+        <div className="mt-2.5">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                call.isOver ? 'bg-success' : 'bg-accent'
+              }`}
+              style={{ width: `${call.confidence}%` }}
+            />
+          </div>
+          <div className="num mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>Confidence</span>
+            <span className="font-semibold text-foreground">{call.confidence}%</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
