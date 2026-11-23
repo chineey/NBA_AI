@@ -811,7 +811,7 @@ def player_detail(player_id: int, team_id: int = Query(...), competition_code: s
 import football_analysis
 
 
-def _build_live_match_obj(m: dict) -> dict | None:
+def _build_live_match_obj(m: dict, include_lineups: bool = True) -> dict | None:
     home = _fb_teams.get(m.get("home_team_id"))
     away = _fb_teams.get(m.get("away_team_id"))
     if not home or not away:
@@ -821,13 +821,14 @@ def _build_live_match_obj(m: dict) -> dict | None:
     away_matches = _fb_matches_by_team.get(away["id"], [])
     hs = football_prediction_model.team_strength(home["id"], home_matches)
     as_ = football_prediction_model.team_strength(away["id"], away_matches)
-    
-    # Squad starting XI if available
-    home_squad = _get_football_squad_with_cache(home["id"])
-    away_squad = _get_football_squad_with_cache(away["id"])
-    
-    home_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(home_squad[:11])]
-    away_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(away_squad[:11])]
+
+    home_xi = []
+    away_xi = []
+    if include_lineups:
+        home_squad = _get_football_squad_with_cache(home["id"])
+        away_squad = _get_football_squad_with_cache(away["id"])
+        home_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(home_squad[:11])]
+        away_xi = [{"name": p["name"], "position": p.get("position", "MID")[:3].upper() or "MID", "number": i+1} for i, p in enumerate(away_squad[:11])]
 
     return {
         "id": m["id"],
@@ -860,18 +861,25 @@ def list_predictions(
     limit: int = Query(default=50, le=100)
 ):
     """Returns upcoming match predictions with full 1X2 probabilities for the homepage."""
+    code = competition_code.upper()
     live_objs = []
     if _fb_matches:
-        for m in _fb_matches:
-            if m.get("status") in ("SCHEDULED", "TIMED"):
-                obj = _build_live_match_obj(m)
-                if obj:
-                    live_objs.append(obj)
-    return football_analysis.get_all_predictions(
+        upcoming = [
+            m for m in _fb_matches
+            if m.get("status") in ("SCHEDULED", "TIMED")
+            and (code == "ALL" or m.get("competition_code") == code)
+        ]
+        upcoming.sort(key=lambda m: m.get("utc_date") or "")
+        for m in upcoming[:limit]:
+            obj = _build_live_match_obj(m, include_lineups=False)
+            if obj:
+                live_objs.append(obj)
+    preds = football_analysis.get_all_predictions(
         competition_code=competition_code,
         limit=limit,
         live_matches=live_objs if live_objs else None
     )
+    return {"predictions": preds}
 
 
 @football_router.get("/football/matches/{match_id}/analysis")

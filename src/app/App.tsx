@@ -272,23 +272,27 @@ export default function App() {
             Sign out
           </button>
         </div>
-        {ticker.length > 0 && (
-          <div className="overflow-hidden border-t bg-secondary/40 py-1.5 text-xs">
-            <div className="marquee flex w-max gap-8 whitespace-nowrap">
-              {[0, 1].flatMap((k) =>
-                ticker.map((t, i) => (
-                  <span key={`${k}-${i}`} className="flex items-center gap-2 text-muted-foreground">
-                    {t.live && <span className="live-dot size-1.5 rounded-full bg-destructive" />}
-                    <span className="text-foreground font-medium">{t.a}</span>
-                    <span className="num font-semibold text-primary">{t.s}</span>
-                    <span className="text-foreground font-medium">{t.b}</span>
-                    <span>{t.m}</span>
-                  </span>
-                )),
-              )}
+        {(() => {
+          const visibleTicker = ticker.filter((t) => t.sport === sport);
+          if (visibleTicker.length === 0) return null;
+          return (
+            <div className="overflow-hidden border-t bg-secondary/40 py-1.5 text-xs">
+              <div className="marquee flex w-max gap-8 whitespace-nowrap">
+                {[0, 1].flatMap((k) =>
+                  visibleTicker.map((t, i) => (
+                    <span key={`${k}-${i}`} className="flex items-center gap-2 text-muted-foreground">
+                      {t.live && <span className="live-dot size-1.5 rounded-full bg-destructive" />}
+                      <span className="text-foreground font-medium">{t.a}</span>
+                      <span className="num font-semibold text-primary">{t.s}</span>
+                      <span className="text-foreground font-medium">{t.b}</span>
+                      <span>{t.m}</span>
+                    </span>
+                  )),
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </header>
 
       <main key={sport} className="rise mx-auto max-w-6xl px-3 sm:px-4 py-5 sm:py-8">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { PillTabs, ProbBar, StatBox, TextAvatar } from '../DesignPrimitives';
 
@@ -89,13 +90,13 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
   const homeName = data ? data.homeTeam.short_name || data.homeTeam.shortName || data.homeTeam.name : '';
   const awayName = data ? data.awayTeam.short_name || data.awayTeam.shortName || data.awayTeam.name : '';
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-3 sm:p-4 backdrop-blur overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-3 sm:p-4 backdrop-blur overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="panel rise glow w-full max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 my-4 sm:my-8"
+        className="panel rise glow w-full max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -274,6 +275,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
