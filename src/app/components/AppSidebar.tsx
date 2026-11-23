@@ -172,13 +172,13 @@ export function AppSidebar({ sport, setSport, mode, switchMode, footballSection,
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={footballSection === 'fixtures'}
-                    onClick={() => setFootballSection('fixtures')}
-                    tooltip="Fixtures"
+                    isActive={footballSection === 'results'}
+                    onClick={() => setFootballSection('results')}
+                    tooltip="Results"
                     className="data-[active=true]:bg-white/10 data-[active=true]:text-white"
                   >
                     <CalendarDays />
-                    <span>Fixtures</span>
+                    <span>Results</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>

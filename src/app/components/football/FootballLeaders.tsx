@@ -101,19 +101,24 @@ export function FootballLeaders({ stat, onSelectPlayer }: Props) {
               key={p.playerId}
               type="button"
               onClick={() => onSelectPlayer(p)}
-              className="flex w-full items-center gap-4 border-b px-5 py-3 text-left transition-colors last:border-0 hover:bg-secondary"
+              className="flex w-full items-center gap-3 sm:gap-4 border-b px-3.5 sm:px-5 py-3 text-left transition-colors last:border-0 hover:bg-secondary"
             >
-              <span className={`num w-6 font-bold ${i < 3 ? 'text-primary' : 'text-muted-foreground'}`}>
+              <span className={`num w-5 sm:w-6 text-xs sm:text-sm font-bold ${i < 3 ? 'text-primary' : 'text-muted-foreground'}`}>
                 {i + 1}
               </span>
               <TextAvatar label={p.name} />
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{p.name}</div>
+                <div className="truncate text-sm sm:text-base font-medium">{p.name}</div>
                 <div className="truncate text-xs text-muted-foreground">{p.teamName}</div>
               </div>
-              <span className="num ml-auto text-xl font-semibold">
-                {stat === 'goals' ? p.goals : p.assists}
-              </span>
+              <div className="ml-auto flex items-baseline gap-2 shrink-0">
+                <span className="num hidden sm:inline text-xs text-muted-foreground">
+                  {p.playedMatches} GP
+                </span>
+                <span className="num text-lg sm:text-xl font-semibold">
+                  {stat === 'goals' ? p.goals : p.assists}
+                </span>
+              </div>
             </button>
           ))}
         </div>

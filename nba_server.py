@@ -906,25 +906,23 @@ def get_score_ticker():
 
     # 2. Football live / recent matches from football_server memory
     try:
-        from football_server import _fb_matches, _fb_teams, _team_short
+        import football_server as _fs
+        matches_seq = _fs._fb_matches.values() if isinstance(_fs._fb_matches, dict) else _fs._fb_matches
         fb_candidates = [
-            m for m in _fb_matches.values()
+            m for m in matches_seq
             if m.get("status") in ("IN_PLAY", "PAUSED", "FINISHED")
             and m.get("full_time_home") is not None
         ]
-        fb_candidates.sort(
-            key=lambda m: (0 if m.get("status") in ("IN_PLAY", "PAUSED") else 1, -(len(m.get("utc_date") or ""))),
-        )
         fb_candidates.sort(key=lambda m: m.get("utc_date") or "", reverse=True)
         fb_candidates.sort(key=lambda m: 0 if m.get("status") in ("IN_PLAY", "PAUSED") else 1)
         for m in fb_candidates[:6]:
-            ht = _fb_teams.get(m["home_team_id"], {})
-            at = _fb_teams.get(m["away_team_id"], {})
+            ht = _fs._fb_teams.get(m["home_team_id"], {})
+            at = _fs._fb_teams.get(m["away_team_id"], {})
             is_live = m.get("status") in ("IN_PLAY", "PAUSED")
             items.append({
                 "sport": "football",
-                "a": _team_short(ht) or ht.get("tla", "HOM"),
-                "b": _team_short(at) or at.get("tla", "AWY"),
+                "a": _fs._team_short(ht) or ht.get("tla", "HOM"),
+                "b": _fs._team_short(at) or at.get("tla", "AWY"),
                 "s": f"{m['full_time_home']}–{m['full_time_away']}",
                 "m": "LIVE" if is_live else "FT",
                 "live": is_live,

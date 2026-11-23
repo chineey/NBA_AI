@@ -10,7 +10,7 @@ import { FootballFixtures } from './FootballFixtures';
 import { FootballPredictions } from './FootballPredictions';
 import { FootballPlayerSearch, type PlayerSearchResult } from './FootballPlayerSearch';
 
-export type FootballSection = 'predictions' | 'fixtures' | 'scorers' | 'assists' | 'browse' | 'search';
+export type FootballSection = 'predictions' | 'results' | 'scorers' | 'assists' | 'browse' | 'search';
 
 type View =
   | { k: 'competition'; code: string; name: string }
@@ -160,7 +160,7 @@ export function FootballApp() {
         onChange={handleTabChange}
         items={[
           ['predictions', 'Predictions'],
-          ['fixtures', 'Fixtures'],
+          ['results', 'Results'],
           ['scorers', 'Top scorers'],
           ['assists', 'Top assists'],
           ['browse', 'Browse'],
@@ -175,7 +175,7 @@ export function FootballApp() {
         />
       )}
 
-      {tab === 'fixtures' && (
+      {tab === 'results' && (
         <FootballFixtures
           onSelectTeam={handleSelectTeam}
           onSelectCompetition={handleSelectCompetition}

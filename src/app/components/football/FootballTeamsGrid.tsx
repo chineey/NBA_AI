@@ -60,21 +60,25 @@ export function FootballTeamsGrid({ competitionCode, competitionName, onSelectTe
               key={t.id}
               type="button"
               onClick={() => onSelectTeam(t)}
-              className="panel panel-hover flex items-center gap-4 p-5 text-left"
+              className="panel panel-hover flex items-center gap-3 sm:gap-4 p-4 sm:p-5 text-left"
             >
               {t.crest ? (
-                <img src={t.crest} alt={t.name} className="size-10 object-contain shrink-0" />
+                <img src={t.crest} alt={t.name} className="size-9 sm:size-10 object-contain shrink-0" loading="lazy" />
               ) : (
                 <TextAvatar label={t.shortName || t.name} />
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold">{t.shortName || t.name}</div>
+                <div className="truncate font-semibold text-sm sm:text-base">{t.shortName || t.name}</div>
                 <div className="num text-xs text-muted-foreground">
                   {t.position != null ? `#${t.position}` : t.tla}
                   {t.points != null ? ` · ${t.points} pts` : ''}
                 </div>
               </div>
-              {t.form && <FormBadges form={t.form} />}
+              {t.form && (
+                <div className="hidden sm:block shrink-0">
+                  <FormBadges form={t.form} />
+                </div>
+              )}
             </button>
           ))}
         </div>

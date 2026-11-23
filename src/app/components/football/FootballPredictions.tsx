@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { ProbBar } from '../DesignPrimitives';
+import { ProbBar, TextAvatar } from '../DesignPrimitives';
 import { MatchAnalysisModal } from './MatchAnalysisModal';
 
 export interface PredictionMatch {
@@ -34,6 +35,11 @@ const COMPETITION_PILLS = [
   { code: 'PD', label: 'La Liga' },
   { code: 'SA', label: 'Serie A' },
   { code: 'BL1', label: 'Bundesliga' },
+  { code: 'FL1', label: 'Ligue 1' },
+  { code: 'DED', label: 'Eredivisie' },
+  { code: 'PPL', label: 'Primeira Liga' },
+  { code: 'ELC', label: 'Championship' },
+  { code: 'BSA', label: 'Brasileirão' },
 ];
 
 function formatKickoff(utcIso: string) {
@@ -95,14 +101,14 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="no-scrollbar flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
           {COMPETITION_PILLS.map((c) => (
             <button
               key={c.code}
               type="button"
               onClick={() => setSelectedComp(c.code)}
-              className={`rounded-full border px-3.5 py-1 text-xs font-medium transition-colors ${
+              className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 selectedComp === c.code
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:border-primary hover:text-foreground'
@@ -117,14 +123,14 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
           placeholder="Filter teams…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="panel w-full sm:w-56 px-3.5 py-1.5 text-sm outline-none focus:border-primary"
+          className="panel w-full shrink-0 sm:w-56 px-3.5 py-2 sm:py-1.5 text-sm outline-none focus:border-primary"
         />
       </div>
 
       {loading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="panel h-36 animate-pulse" />
+            <div key={i} className="panel h-40 animate-pulse" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
@@ -132,33 +138,79 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
           No upcoming match predictions found.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 stagger">
+        <div className="grid gap-3.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3 stagger">
           {filtered.map((m) => {
             const homeName = m.homeTeam.short_name || m.homeTeam.shortName || m.homeTeam.name;
             const awayName = m.awayTeam.short_name || m.awayTeam.shortName || m.awayTeam.name;
+            const confColor =
+              m.prediction.confidence === 'high'
+                ? 'bg-primary/15 text-primary'
+                : m.prediction.confidence === 'medium'
+                ? 'bg-accent/15 text-accent'
+                : 'bg-secondary text-muted-foreground';
             return (
               <button
                 key={m.matchId}
                 type="button"
                 onClick={() => setSelectedMatchId(m.matchId)}
-                className="panel panel-hover p-5 text-left"
+                className="panel panel-hover group flex flex-col justify-between p-4 sm:p-5 text-left"
               >
-                <div className="mb-3 flex justify-between text-xs text-muted-foreground">
-                  <span>{m.competition.name}</span>
-                  <span className="num">{formatKickoff(m.utcDate)}</span>
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-2 text-[11px] sm:text-xs text-muted-foreground">
+                    <span className="truncate font-medium">{m.competition.name}</span>
+                    <span className="num shrink-0">{formatKickoff(m.utcDate)}</span>
+                  </div>
+
+                  <div className="mb-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {m.homeTeam.crest ? (
+                        <img
+                          src={m.homeTeam.crest}
+                          alt={homeName}
+                          className="size-6 sm:size-7 shrink-0 object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <TextAvatar label={homeName} />
+                      )}
+                      <span className="truncate text-sm sm:text-base font-semibold">{homeName}</span>
+                    </div>
+
+                    <span className="num rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground">
+                      {m.prediction.predictedScore || 'vs'}
+                    </span>
+
+                    <div className="flex min-w-0 items-center justify-end gap-2">
+                      <span className="truncate text-right text-sm sm:text-base font-semibold">{awayName}</span>
+                      {m.awayTeam.crest ? (
+                        <img
+                          src={m.awayTeam.crest}
+                          alt={awayName}
+                          className="size-6 sm:size-7 shrink-0 object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <TextAvatar label={awayName} />
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="mb-4 flex items-center justify-between gap-2 font-semibold">
-                  <span className="truncate">{homeName}</span>
-                  <span className="num text-xs text-muted-foreground">
-                    {m.prediction.predictedScore || 'vs'}
-                  </span>
-                  <span className="truncate text-right">{awayName}</span>
+
+                <div className="space-y-3">
+                  <ProbBar
+                    h={m.prediction.homeWinPct}
+                    d={m.prediction.drawPct}
+                    a={m.prediction.awayWinPct}
+                  />
+                  <div className="flex items-center justify-between pt-0.5 text-[11px] text-muted-foreground">
+                    <span className={`rounded-full px-2 py-0.5 font-medium capitalize ${confColor}`}>
+                      {m.prediction.confidence} confidence
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 font-medium text-foreground/70 group-hover:text-primary transition-colors">
+                      Details <ChevronRight className="size-3.5" />
+                    </span>
+                  </div>
                 </div>
-                <ProbBar
-                  h={m.prediction.homeWinPct}
-                  d={m.prediction.drawPct}
-                  a={m.prediction.awayWinPct}
-                />
               </button>
             );
           })}

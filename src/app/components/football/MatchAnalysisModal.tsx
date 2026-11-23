@@ -98,9 +98,14 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
         className="panel rise glow w-full max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 my-4 sm:my-8"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between text-xs uppercase tracking-wider text-muted-foreground">
-          <span>Match analysis · {data?.competition.name ?? 'Loading…'}</span>
-          <button type="button" onClick={onClose} className="hover:text-foreground">
+        <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <span className="truncate">Match analysis · {data?.competition.name ?? 'Loading…'}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 shrink-0 place-items-center rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
+          >
             ✕
           </button>
         </div>
@@ -114,7 +119,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
           <div className="py-10 text-center text-sm text-destructive">{error || 'Analysis unavailable'}</div>
         ) : (
           <>
-            <div className="my-6 grid grid-cols-3 items-center text-center gap-2">
+            <div className="my-5 sm:my-6 grid grid-cols-[1fr_auto_1fr] items-center text-center gap-2 sm:gap-4">
               <button
                 type="button"
                 onClick={() => {
@@ -125,17 +130,17 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
                   );
                   onClose();
                 }}
-                className="flex flex-col items-center hover:text-primary transition-colors"
+                className="flex min-w-0 flex-col items-center hover:text-primary transition-colors"
               >
                 {data.homeTeam.crest ? (
-                  <img src={data.homeTeam.crest} alt={homeName} className="size-12 object-contain" />
+                  <img src={data.homeTeam.crest} alt={homeName} className="size-10 sm:size-12 object-contain" />
                 ) : (
                   <TextAvatar label={homeName} big />
                 )}
-                <div className="mt-2 font-semibold text-sm">{homeName}</div>
+                <div className="mt-2 w-full truncate font-semibold text-xs sm:text-sm">{homeName}</div>
               </button>
 
-              <div className="num text-3xl font-bold">{data.prediction.predictedScore || 'vs'}</div>
+              <div className="num text-2xl sm:text-3xl font-bold">{data.prediction.predictedScore || 'vs'}</div>
 
               <button
                 type="button"
@@ -147,14 +152,14 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
                   );
                   onClose();
                 }}
-                className="flex flex-col items-center hover:text-primary transition-colors"
+                className="flex min-w-0 flex-col items-center hover:text-primary transition-colors"
               >
                 {data.awayTeam.crest ? (
-                  <img src={data.awayTeam.crest} alt={awayName} className="size-12 object-contain" />
+                  <img src={data.awayTeam.crest} alt={awayName} className="size-10 sm:size-12 object-contain" />
                 ) : (
                   <TextAvatar label={awayName} big />
                 )}
-                <div className="mt-2 font-semibold text-sm">{awayName}</div>
+                <div className="mt-2 w-full truncate font-semibold text-xs sm:text-sm">{awayName}</div>
               </button>
             </div>
 
@@ -183,7 +188,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
               />
             </div>
 
-            <div className="mt-4 max-h-56 overflow-y-auto space-y-3 text-sm">
+            <div className="mt-4 space-y-3 text-sm">
               {tab === 'overview' && (
                 <div className="rounded-lg bg-secondary p-4">
                   <span className="font-semibold text-primary">Model pick ({data.prediction.favoredLabel}): </span>

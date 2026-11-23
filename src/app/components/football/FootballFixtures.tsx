@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { PillTabs } from '../DesignPrimitives';
 import { MatchAnalysisModal } from './MatchAnalysisModal';
 
 type Competition = { id: number | null; code: string; name: string; emblem: string; area: string };
@@ -17,8 +16,6 @@ type Fixture = {
   score: { home: number; away: number } | null;
 };
 
-type When = 'upcoming' | 'results';
-
 function formatFixtureDate(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
@@ -33,7 +30,6 @@ type Props = {
 export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [competitionCode, setCompetitionCode] = useState('ALL');
-  const [when, setWhen] = useState<When>('upcoming');
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loadingFixtures, setLoadingFixtures] = useState(true);
   const [openMatchId, setOpenMatchId] = useState<number | null>(null);
@@ -52,28 +48,20 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
 
   useEffect(() => {
     setLoadingFixtures(true);
-    fetch(`${BASE}/football/fixtures?competition_code=${competitionCode}&when=${when}`)
+    fetch(`${BASE}/football/fixtures?competition_code=${competitionCode}&when=results`)
       .then((r) => r.json())
       .then(setFixtures)
       .catch((e) => {
         console.error(e);
-        toast.error('Could not load fixtures', { description: 'Please try again in a moment.' });
+        toast.error('Could not load results', { description: 'Please try again in a moment.' });
       })
       .finally(() => setLoadingFixtures(false));
-  }, [competitionCode, when, BASE]);
+  }, [competitionCode, BASE]);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PillTabs
-          value={when}
-          onChange={setWhen}
-          items={[
-            ['upcoming', 'Upcoming'],
-            ['results', 'Results'],
-          ]}
-        />
-
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg sm:text-xl font-bold">Past Results</h2>
         <select
           value={competitionCode}
           onChange={(e) => setCompetitionCode(e.target.value)}
@@ -91,34 +79,59 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
       {loadingFixtures ? (
         <div className="panel h-64 animate-pulse" />
       ) : fixtures.length === 0 ? (
-        <div className="panel p-8 text-center text-sm text-muted-foreground">No fixtures found.</div>
+        <div className="panel p-8 text-center text-sm text-muted-foreground">No past results found.</div>
       ) : (
         <div className="panel overflow-hidden stagger">
           {fixtures.map((f) => {
             const hasScore = f.score !== null;
+            const homeName = f.homeTeam.shortName || f.homeTeam.name;
+            const awayName = f.awayTeam.shortName || f.awayTeam.name;
             return (
               <button
                 key={f.matchId}
                 type="button"
                 onClick={() => setOpenMatchId(f.matchId)}
-                className="grid w-full grid-cols-[54px_1fr_auto_1fr] sm:grid-cols-[80px_1fr_auto_1fr] items-center gap-2 sm:gap-4 border-b px-3 sm:px-5 py-3.5 sm:py-4 text-xs sm:text-sm transition-colors last:border-0 hover:bg-secondary"
+                className="grid w-full grid-cols-[54px_1fr_auto_1fr] sm:grid-cols-[130px_1fr_auto_1fr] items-center gap-2 sm:gap-4 border-b px-3 sm:px-5 py-3.5 sm:py-4 text-xs sm:text-sm transition-colors last:border-0 hover:bg-secondary"
               >
-                <span className="num text-left text-[11px] sm:text-xs text-muted-foreground">
-                  {formatFixtureDate(f.utcDate)}
-                </span>
-                <span className="truncate text-right font-medium">
-                  {f.homeTeam.shortName || f.homeTeam.name}
-                </span>
+                <div className="flex flex-col text-left">
+                  <span className="num text-[11px] sm:text-xs text-muted-foreground">
+                    {formatFixtureDate(f.utcDate)}
+                  </span>
+                  {competitionCode === 'ALL' && (
+                    <span className="truncate text-[10px] font-medium text-muted-foreground/75">
+                      {f.competition.code}
+                    </span>
+                  )}
+                </div>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <span className="truncate text-right font-medium">{homeName}</span>
+                  {f.homeTeam.crest && (
+                    <img
+                      src={f.homeTeam.crest}
+                      alt={homeName}
+                      className="hidden sm:block size-5 shrink-0 object-contain"
+                      loading="lazy"
+                    />
+                  )}
+                </div>
                 <span
-                  className={`num rounded-md px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold ${
+                  className={`num rounded-md px-2.5 sm:px-3 py-1 text-xs sm:text-sm font-semibold ${
                     hasScore ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
                   }`}
                 >
                   {hasScore ? `${f.score!.home}–${f.score!.away}` : '–'}
                 </span>
-                <span className="truncate text-left font-medium">
-                  {f.awayTeam.shortName || f.awayTeam.name}
-                </span>
+                <div className="flex min-w-0 items-center justify-start gap-2">
+                  {f.awayTeam.crest && (
+                    <img
+                      src={f.awayTeam.crest}
+                      alt={awayName}
+                      className="hidden sm:block size-5 shrink-0 object-contain"
+                      loading="lazy"
+                    />
+                  )}
+                  <span className="truncate text-left font-medium">{awayName}</span>
+                </div>
               </button>
             );
           })}
