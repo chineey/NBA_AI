@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PillTabs } from '../DesignPrimitives';
 import { CompetitionsGrid } from './CompetitionsGrid';
 import { FootballTeamsGrid, type FootballTeam } from './FootballTeamsGrid';
@@ -35,9 +35,58 @@ export function FootballApp() {
   const [browseMode, setBrowseMode] = useState<BrowseMode>('competitions');
   const [allTeams, setAllTeams] = useState<TeamEntry[]>([]);
   const [stack, setStack] = useState<View[]>([]);
+  const fbDepthRef = useRef(0);
 
-  const push = (v: View) => setStack((s) => [...s, v]);
-  const pop = () => setStack((s) => s.slice(0, -1));
+  const pushFbHistory = (nextTab: FootballSection, nextBrowse: BrowseMode, nextStack: View[]) => {
+    fbDepthRef.current += 1;
+    const prevAppNav = window.history.state?.appNav || { sport: 'football' };
+    window.history.pushState(
+      {
+        appNav: { ...prevAppNav, sport: 'football' },
+        fbNav: { tab: nextTab, browseMode: nextBrowse, stack: nextStack },
+      },
+      '',
+    );
+  };
+
+  useEffect(() => {
+    const curState = window.history.state || {};
+    if (!curState.fbNav) {
+      window.history.replaceState(
+        {
+          ...curState,
+          fbNav: { tab: 'predictions', browseMode: 'competitions', stack: [] },
+        },
+        '',
+      );
+    }
+    const onPopState = (e: PopStateEvent) => {
+      const fb = e.state?.fbNav;
+      if (!fb) {
+        setStack([]);
+        return;
+      }
+      fbDepthRef.current = Math.max(0, fbDepthRef.current - 1);
+      setTab(fb.tab ?? 'predictions');
+      setBrowseMode(fb.browseMode ?? 'competitions');
+      setStack(Array.isArray(fb.stack) ? fb.stack : []);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const push = (v: View) => {
+    const nextStack = [...stack, v];
+    setStack(nextStack);
+    pushFbHistory(tab, browseMode, nextStack);
+  };
+  const pop = () => {
+    if (fbDepthRef.current > 0 && stack.length > 0) {
+      window.history.back();
+    } else {
+      setStack((s) => s.slice(0, -1));
+    }
+  };
   const top = stack[stack.length - 1];
 
   const handleSelectCompetition = (code: string, name: string) => {
@@ -98,8 +147,16 @@ export function FootballApp() {
   };
 
   const handleTabChange = (next: FootballSection) => {
+    if (next === tab && stack.length === 0) return;
     setStack([]);
     setTab(next);
+    pushFbHistory(next, browseMode, []);
+  };
+
+  const handleBrowseModeChange = (next: BrowseMode) => {
+    if (next === browseMode) return;
+    setBrowseMode(next);
+    pushFbHistory(tab, next, stack);
   };
 
   if (top?.k === 'competition') {
@@ -206,7 +263,7 @@ export function FootballApp() {
         <div className="space-y-4">
           <PillTabs
             value={browseMode}
-            onChange={setBrowseMode}
+            onChange={handleBrowseModeChange}
             items={[
               ['competitions', 'By competition'],
               ['all-teams', 'All teams'],

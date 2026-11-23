@@ -67,18 +67,37 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
+  const closeModal = () => {
+    if (window.history.state?.fbModal === matchId) {
+      window.history.back();
+    } else {
+      onClose();
+    }
+  };
+
   useEffect(() => {
+    const prevState = window.history.state || {};
+    if (prevState.fbModal !== matchId) {
+      window.history.pushState({ ...prevState, fbModal: matchId }, '');
+    }
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') closeModal();
+    };
+    const onPopState = (e: PopStateEvent) => {
+      if (e.state?.fbModal !== matchId) {
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('popstate', onPopState);
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('popstate', onPopState);
     };
-  }, [onClose]);
+  }, [matchId, onClose]);
 
   useEffect(() => {
     setLoading(true);
@@ -106,7 +125,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/80 p-3 sm:p-6 backdrop-blur"
-      onClick={onClose}
+      onClick={closeModal}
     >
       <div
         className="panel rise glow my-auto w-full max-w-2xl max-h-[88vh] overflow-y-auto p-4 sm:p-6"
@@ -116,7 +135,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
           <span className="truncate">Match analysis · {data?.competition.name ?? 'Loading…'}</span>
           <button
             type="button"
-            onClick={onClose}
+            onClick={closeModal}
             aria-label="Close"
             className="grid size-8 shrink-0 place-items-center rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
           >

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { AuthPage } from './components/AuthPage';
@@ -49,6 +49,44 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [ticker, setTicker] = useState<Array<{ sport: string; a: string; b: string; s: string; m: string; live?: boolean }>>([]);
+  const navDepthRef = useRef(0);
+
+  const pushAppNav = (next: {
+    sport: Sport;
+    mode: Mode;
+    teamView: TeamView;
+    rosterAbbr: string;
+    selectedPlayer: any;
+  }) => {
+    navDepthRef.current += 1;
+    window.history.pushState({ appNav: next }, '');
+  };
+
+  useEffect(() => {
+    if (!window.history.state?.appNav) {
+      window.history.replaceState(
+        { appNav: { sport: 'nba', mode: 'players', teamView: 'grid', rosterAbbr: '', selectedPlayer: null } },
+        '',
+      );
+    }
+    const onPopState = (e: PopStateEvent) => {
+      const nav = e.state?.appNav;
+      if (!nav) return;
+      navDepthRef.current = Math.max(0, navDepthRef.current - 1);
+      setSport(nav.sport ?? 'nba');
+      setMode(nav.mode ?? 'players');
+      setTeamView(nav.teamView ?? 'grid');
+      setRosterAbbr(nav.rosterAbbr ?? '');
+      setSelectedPlayer(nav.selectedPlayer ?? null);
+      if (nav.selectedPlayer) {
+        setPlayers([nav.selectedPlayer]);
+      } else {
+        setPlayers([]);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -88,6 +126,7 @@ export default function App() {
       const data = await response.json();
       setPlayers([data]);
       setSelectedPlayer(data);
+      pushAppNav({ sport, mode: 'players', teamView: 'grid', rosterAbbr, selectedPlayer: data });
     } catch (error) {
       console.error('Failed to fetch player:', error);
       toast.error('Player not found', {
@@ -103,15 +142,17 @@ export default function App() {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/player/${encodeURIComponent(rosterPlayer.name)}`);
       if (!response.ok) throw new Error('Player not found');
       const data = await response.json();
-      setSelectedPlayer({
+      const playerObj = {
         ...data,
         id: rosterPlayer.id || data.id,
         position: data.position && data.position !== '—' ? data.position : rosterPlayer.position,
         height: data.height || rosterPlayer.height,
         weight: data.weight || rosterPlayer.weight,
         jersey: data.jersey || rosterPlayer.number,
-      });
+      };
+      setSelectedPlayer(playerObj);
       setTeamView('player');
+      pushAppNav({ sport, mode: 'teams', teamView: 'player', rosterAbbr, selectedPlayer: playerObj });
     } catch (error) {
       console.error('Failed to fetch player:', error);
       toast.error('Could not load player stats', { description: 'Please try again in a moment.' });
@@ -124,9 +165,19 @@ export default function App() {
     setSearchQuery('');
     if (next === 'players') {
       setTeamView('grid');
+      pushAppNav({ sport, mode: next, teamView: 'grid', rosterAbbr: '', selectedPlayer: null });
     } else {
       setSelectedPlayer(null);
       setPlayers([]);
+      pushAppNav({ sport, mode: next, teamView: 'grid', rosterAbbr, selectedPlayer: null });
+    }
+  };
+
+  const goBackOr = (fallback: () => void) => {
+    if (navDepthRef.current > 0) {
+      window.history.back();
+    } else {
+      fallback();
     }
   };
 
@@ -137,11 +188,13 @@ export default function App() {
       return (
         <div className="rise min-w-0">
           <BackButton
-            onClick={() => {
-              setSelectedPlayer(null);
-              setPlayers([]);
-              setSearchQuery('');
-            }}
+            onClick={() =>
+              goBackOr(() => {
+                setSelectedPlayer(null);
+                setPlayers([]);
+                setSearchQuery('');
+              })
+            }
             label="Back to search"
           />
           <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -161,7 +214,7 @@ export default function App() {
     if (mode === 'teams' && teamView === 'player' && selectedPlayer) {
       return (
         <div className="rise min-w-0">
-          <BackButton onClick={() => setTeamView('roster')} label="Back to roster" />
+          <BackButton onClick={() => goBackOr(() => setTeamView('roster'))} label="Back to roster" />
           <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
             <PlayerStatsColumn
               players={[selectedPlayer]}
@@ -236,13 +289,14 @@ export default function App() {
           <TeamRoster
             abbr={rosterAbbr}
             onSelectPlayer={fetchPlayerFromRoster}
-            onBack={() => setTeamView('grid')}
+            onBack={() => goBackOr(() => setTeamView('grid'))}
           />
         ) : (
           <TeamsGrid
             onSelectTeam={(abbr) => {
               setRosterAbbr(abbr);
               setTeamView('roster');
+              pushAppNav({ sport, mode: 'teams', teamView: 'roster', rosterAbbr: abbr, selectedPlayer: null });
             }}
           />
         )}
@@ -257,7 +311,11 @@ export default function App() {
           <Logo />
           <PillTabs
             value={sport}
-            onChange={(s) => setSport(s)}
+            onChange={(s) => {
+              if (s === sport) return;
+              setSport(s);
+              pushAppNav({ sport: s, mode, teamView, rosterAbbr, selectedPlayer });
+            }}
             items={[
               ['nba', '🏀 NBA'],
               ['football', '⚽ Football'],
