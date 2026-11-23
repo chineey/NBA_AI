@@ -214,11 +214,11 @@ export default function App() {
         />
 
         {mode === 'players' ? (
-          <div className="mx-auto max-w-2xl py-12 text-center rise">
-            <h1 className="text-4xl font-bold md:text-5xl">
+          <div className="mx-auto max-w-2xl py-6 sm:py-12 text-center rise">
+            <h1 className="text-3xl font-bold sm:text-4xl md:text-5xl">
               Find any player&apos;s <span className="text-shine">edge</span>
             </h1>
-            <p className="mt-3 text-muted-foreground">
+            <p className="mt-3 text-sm sm:text-base text-muted-foreground">
               Search game logs, season averages and AI prop predictions.
             </p>
             <form
@@ -226,17 +226,17 @@ export default function App() {
                 e.preventDefault();
                 fetchPlayer(searchQuery);
               }}
-              className="mt-8 flex gap-2"
+              className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-2.5"
             >
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search players (e.g. Stephen Curry)…"
-                className="panel flex-1 px-5 py-4 text-base outline-none focus:border-primary"
+                className="panel flex-1 px-4 sm:px-5 py-3.5 sm:py-4 text-base outline-none focus:border-primary"
               />
               <button
                 type="submit"
-                className="glow rounded-xl bg-primary px-6 font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
+                className="glow rounded-xl bg-primary px-6 py-3.5 font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
               >
                 Search
               </button>
@@ -280,7 +280,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2.5 sm:py-3">
           <Logo />
           <PillTabs
             value={sport}
@@ -294,7 +294,7 @@ export default function App() {
             type="button"
             onClick={signOut}
             title={user.email ?? 'Sign out'}
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="shrink-0 py-1.5 px-2 text-xs sm:text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             Sign out
           </button>
@@ -318,7 +318,7 @@ export default function App() {
         )}
       </header>
 
-      <main key={sport} className="rise mx-auto max-w-6xl px-4 py-8">
+      <main key={sport} className="rise mx-auto max-w-6xl px-3 sm:px-4 py-5 sm:py-8">
         {sport === 'nba' ? renderNbaContent() : <FootballApp />}
       </main>
     </div>

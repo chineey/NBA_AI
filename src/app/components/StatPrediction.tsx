@@ -166,23 +166,23 @@ export function StatPrediction({ player }: { player: Player }) {
           <Bars data={data} line={line} labels={labels} lineLabel={`season avg ${line.toFixed(1)}`} />
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-3 stagger">
+        <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3 stagger">
           <StatBox
             label={hasGenerated ? 'AI Projection' : 'Season Avg'}
             value={hasGenerated ? aiValue.toFixed(1) : line.toFixed(1)}
             accent={hasGenerated}
           />
           <StatBox label={`Hit rate L${data.length}`} value={`${hits}/${data.length}`} />
-          <div className={`panel p-4 ${conf >= 50 ? 'border-primary/60' : 'border-accent/60'}`}>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Trend</div>
+          <div className={`panel p-3 sm:p-4 min-w-0 ${conf >= 50 ? 'border-primary/60' : 'border-accent/60'}`}>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Trend</div>
             <div
-              className={`mt-1 font-display text-2xl font-bold ${
+              className={`mt-1 font-display text-lg sm:text-2xl font-bold ${
                 conf >= 50 ? 'text-primary' : 'text-accent'
               }`}
             >
               {conf >= 50 ? 'OVER' : 'UNDER'}
             </div>
-            <div className="num text-xs text-muted-foreground">{Math.max(conf, 100 - conf)}% vs avg</div>
+            <div className="num truncate text-[11px] sm:text-xs text-muted-foreground">{Math.max(conf, 100 - conf)}% vs avg</div>
           </div>
         </div>
       </div>

@@ -80,7 +80,7 @@ export function FootballLeaders({ stat, onSelectPlayer }: Props) {
         <select
           value={competitionCode}
           onChange={(e) => setCompetitionCode(e.target.value)}
-          className="panel px-3.5 py-2 text-sm outline-none focus:border-primary"
+          className="panel w-full sm:w-auto px-3.5 py-2 text-sm outline-none focus:border-primary"
         >
           {options.map((c) => (
             <option key={c.code} value={c.code}>

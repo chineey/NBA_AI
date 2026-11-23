@@ -40,12 +40,12 @@ export function StatBox({
   accent?: boolean;
 }) {
   return (
-    <div className="panel p-4">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className={`num mt-1 text-2xl font-semibold ${accent ? 'text-primary' : 'text-foreground'}`}>
+    <div className="panel p-3 sm:p-4 min-w-0">
+      <div className="truncate text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={`num mt-1 text-lg sm:text-2xl font-semibold ${accent ? 'text-primary' : 'text-foreground'}`}>
         {value}
       </div>
-      {hint && <div className="mt-1 text-xs text-success">{hint}</div>}
+      {hint && <div className="mt-1 truncate text-[11px] sm:text-xs text-success">{hint}</div>}
     </div>
   );
 }
@@ -60,13 +60,13 @@ export function PillTabs<T extends string>({
   items: [T, string][];
 }) {
   return (
-    <div className="inline-flex flex-wrap gap-1 rounded-xl bg-secondary p-1">
+    <div className="no-scrollbar inline-flex max-w-full flex-nowrap gap-1 overflow-x-auto rounded-xl bg-secondary p-1">
       {items.map(([v, label]) => (
         <button
           key={v}
           type="button"
           onClick={() => onChange(v)}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-300 ${
+          className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium transition-all duration-300 ${
             value === v
               ? 'glow bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -92,31 +92,37 @@ export function Bars({
 }) {
   const max = Math.max(...data, line ?? 0, 1) * 1.15;
   return (
-    <div className="relative flex h-44 items-end gap-2 pt-6">
+    <div className="relative flex h-40 sm:h-44 items-end gap-1 sm:gap-2 pt-6">
       {line !== undefined && line > 0 && (
         <div
           className="pointer-events-none absolute inset-x-0 border-t border-dashed border-accent z-10"
           style={{ bottom: `${Math.min((line / max) * 100, 96)}%` }}
         >
-          <span className="num absolute -top-5 right-0 text-xs text-accent">
+          <span className="num absolute -top-5 right-0 text-[11px] sm:text-xs text-accent">
             {lineLabel ?? `avg ${line.toFixed(1)}`}
           </span>
         </div>
       )}
       {data.map((v, i) => (
         <div key={i} className="flex flex-1 flex-col items-center gap-1 min-w-0">
-          <span className="num text-[10px] text-muted-foreground">{v}</span>
+          <span className="num text-[9px] sm:text-[10px] text-muted-foreground">{v}</span>
           <div
             className={`w-full grow rounded-t-md ${
               line !== undefined && v >= line ? 'bg-primary' : 'bg-secondary'
             }`}
             style={{
-              height: `${Math.max((v / max) * 130, 4)}px`,
+              height: `${Math.max((v / max) * 124, 4)}px`,
               animationDelay: `${i * 45}ms`,
             }}
           />
           {labels?.[i] && (
-            <span className="num truncate max-w-full text-[9px] text-muted-foreground">{labels[i]}</span>
+            <span
+              className={`num truncate max-w-full text-[8px] sm:text-[9px] text-muted-foreground ${
+                i % 2 === 1 ? 'hidden sm:inline' : ''
+              }`}
+            >
+              {labels[i]}
+            </span>
           )}
         </div>
       ))}

@@ -60,17 +60,17 @@ export function FootballPlayerSearch({ onSelectPlayer }: Props) {
         <p className="mt-2 text-sm text-muted-foreground">
           Find any player across top European competitions and inspect their season output.
         </p>
-        <form onSubmit={search} className="mt-6 flex gap-2">
+        <form onSubmit={search} className="mt-6 flex flex-col sm:flex-row gap-2.5">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search player (e.g. Haaland, Saka, Yamal)…"
-            className="panel flex-1 px-5 py-3.5 text-base outline-none focus:border-primary"
+            className="panel flex-1 px-4 sm:px-5 py-3.5 text-base outline-none focus:border-primary"
           />
           <button
             type="submit"
             disabled={searching}
-            className="glow inline-flex items-center gap-2 rounded-xl bg-primary px-6 font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+            className="glow inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
           >
             {searching && <Loader2 className="size-4 animate-spin" />}
             Search

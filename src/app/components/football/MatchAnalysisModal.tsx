@@ -91,11 +91,11 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-4 backdrop-blur overflow-y-auto"
+      className="fixed inset-0 z-50 grid place-items-center bg-background/80 p-3 sm:p-4 backdrop-blur overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="panel rise glow w-full max-w-xl p-6 my-8"
+        className="panel rise glow w-full max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6 my-4 sm:my-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between text-xs uppercase tracking-wider text-muted-foreground">
@@ -193,7 +193,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
 
               {tab === 'form' && (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-lg bg-secondary p-3">
                       <div className="font-semibold">{homeName} (Home)</div>
                       <div className="num text-xs text-muted-foreground mt-1">
@@ -236,7 +236,7 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
               )}
 
               {tab === 'injuries' && (
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="rounded-lg bg-secondary p-3 space-y-1.5">
                     <div className="font-semibold">{homeName}</div>
                     {data.detailedReasoning.injuriesAndAvailability.home.length === 0 ? (

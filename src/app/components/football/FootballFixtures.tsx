@@ -77,7 +77,7 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
         <select
           value={competitionCode}
           onChange={(e) => setCompetitionCode(e.target.value)}
-          className="panel px-3.5 py-2 text-sm outline-none focus:border-primary"
+          className="panel w-full sm:w-auto px-3.5 py-2 text-sm outline-none focus:border-primary"
         >
           <option value="ALL">All Competitions</option>
           {competitions.map((c) => (
@@ -101,16 +101,16 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
                 key={f.matchId}
                 type="button"
                 onClick={() => setOpenMatchId(f.matchId)}
-                className="grid w-full grid-cols-[80px_1fr_auto_1fr] items-center gap-4 border-b px-5 py-4 text-sm transition-colors last:border-0 hover:bg-secondary"
+                className="grid w-full grid-cols-[54px_1fr_auto_1fr] sm:grid-cols-[80px_1fr_auto_1fr] items-center gap-2 sm:gap-4 border-b px-3 sm:px-5 py-3.5 sm:py-4 text-xs sm:text-sm transition-colors last:border-0 hover:bg-secondary"
               >
-                <span className="num text-left text-xs text-muted-foreground">
+                <span className="num text-left text-[11px] sm:text-xs text-muted-foreground">
                   {formatFixtureDate(f.utcDate)}
                 </span>
                 <span className="truncate text-right font-medium">
                   {f.homeTeam.shortName || f.homeTeam.name}
                 </span>
                 <span
-                  className={`num rounded-md px-3 py-1 text-sm font-semibold ${
+                  className={`num rounded-md px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold ${
                     hasScore ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
                   }`}
                 >

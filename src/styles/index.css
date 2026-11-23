@@ -41,6 +41,10 @@
     font-family: "Manrope", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  button, a, select, input {
+    touch-action: manipulation;
   }
   body::before {
     content: "";
@@ -153,6 +157,13 @@
   }
   .live-dot {
     animation: pulse-dot 1.6s infinite;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
   .glow {
     box-shadow: var(--shadow-glow);

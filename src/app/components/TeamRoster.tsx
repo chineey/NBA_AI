@@ -109,19 +109,19 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
         <button
           type="button"
           onClick={onPredict}
-          className="glow rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
+          className="glow w-full sm:w-auto rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
         >
           Next game prediction →
         </button>
       </div>
 
       <div className="panel overflow-hidden">
-        <div className="flex items-center justify-between border-b px-5 py-3">
+        <div className="flex items-center justify-between border-b px-4 sm:px-5 py-3">
           <span className="text-sm font-semibold">Roster</span>
           <span className="num text-xs text-muted-foreground">{roster.players.length} players</span>
         </div>
 
-        <div className={more && !full ? 'max-h-[320px] overflow-y-auto' : ''}>
+        <div className={`overflow-x-auto ${more && !full ? 'max-h-[320px] overflow-y-auto' : ''}`}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-card text-xs uppercase text-muted-foreground">
               <tr>
