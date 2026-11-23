@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json as _json
 import os
+import threading
+import time
 import unicodedata
 from datetime import date
 
@@ -32,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import football_prediction_model
-from db_loader import fetch_table_rows, get_database_url, pg_connection
+from db_loader import _normalize_pg_rows, fetch_table_rows, get_database_url, pg_connection
 from gemini_context import grounded_research
 
 load_dotenv()
@@ -172,90 +174,105 @@ except Exception as e:
     print(f"[football] Startup load failed entirely, football endpoints will be empty: {e}")
 
 # Dynamic cache for squads (team_id -> (timestamp, squad_list))
-_fb_squads_cache = {}
+_fb_squads_cache: dict[int, tuple[float, list]] = {}
+_fb_sb_lock = threading.Lock()
+
+
+def _build_squad_list(links: list[dict], players_by_id: dict[int, dict]) -> list[dict]:
+    squad = []
+    for s in links:
+        p = players_by_id.get(s["player_id"])
+        if not p:
+            continue
+        squad.append({
+            "id": p["id"],
+            "name": p.get("name", ""),
+            "position": s.get("position") or p.get("position", ""),
+            "nationality": p.get("nationality", ""),
+            "dateOfBirth": p.get("date_of_birth") or "",
+            "age": _age_from_dob(p.get("date_of_birth")),
+        })
+    return squad
+
+
+def _fetch_team_squad_from_db(team_id: int) -> tuple[list[dict], dict[int, dict]]:
+    """Fetch (links, players_by_id) for one team using Postgres when available,
+    falling back to a locked Supabase REST client to avoid httpx thread races."""
+    if get_database_url():
+        with pg_connection() as conn:
+            if conn is not None:
+                links = fetch_table_rows(
+                    "football_player_team",
+                    where_eq=("team_id", team_id),
+                    conn=conn,
+                )
+                if not links:
+                    return [], {}
+                player_ids = [l["player_id"] for l in links]
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT * FROM football_players WHERE id = ANY(%s)",
+                        (player_ids,),
+                    )
+                    players = _normalize_pg_rows(cur.fetchall())
+                return links, {r["id"]: r for r in players}
+
+    sb = _get_sb_client()
+    if not sb:
+        return [], {}
+    with _fb_sb_lock:
+        links_resp = sb.table("football_player_team").select("*").eq("team_id", team_id).execute()
+        links = links_resp.data or []
+        if not links:
+            return [], {}
+        player_ids = [l["player_id"] for l in links]
+        players_resp = sb.table("football_players").select("*").in_("id", player_ids).execute()
+        players_dict = {r["id"]: r for r in (players_resp.data or [])}
+        return links, players_dict
+
 
 def _get_football_squad_with_cache(team_id: int) -> list:
     global _fb_squads_cache, _fb_player_team, _fb_players
-    import time
     now = time.time()
-    
+
     # 1. Return from RAM cache if fresh (TTL: 5 minutes)
     if team_id in _fb_squads_cache:
         timestamp, squad = _fb_squads_cache[team_id]
         if now - timestamp < 300:
             return squad
-            
-    # 2. Query Supabase dynamically for this specific team's squad
+
+    # 2. Query Supabase for this specific team squad on cache miss/expiration
+    # (uses direct Postgres via db_loader when DATABASE_URL is set, matching nba_server.py)
     try:
-        sb = _get_sb_client()
-        if sb:
-            # Fetch players mapped to this team
-            links_resp = sb.table("football_player_team").select("*").eq("team_id", team_id).execute()
-            links = links_resp.data or []
-            
-            if links:
-                player_ids = [l["player_id"] for l in links]
-                # Fetch player profiles for matches
-                players_resp = sb.table("football_players").select("*").in_("id", player_ids).execute()
-                players_dict = {r["id"]: r for r in players_resp.data or []}
-                
-                squad = []
-                for s in links:
-                    p = players_dict.get(s["player_id"])
-                    if not p:
-                        continue
-                    squad.append({
-                        "id": p["id"],
-                        "name": p.get("name", ""),
-                        "position": s.get("position") or p.get("position", ""),
-                        "nationality": p.get("nationality", ""),
-                        "dateOfBirth": p.get("date_of_birth") or "",
-                        "age": _age_from_dob(p.get("date_of_birth")),
-                    })
-                _fb_squads_cache[team_id] = (now, squad)
-                
-                # Update local startup cache lists for consistency
-                for s in links:
-                    p = players_dict.get(s["player_id"])
-                    if p:
-                        _fb_players[p["id"]] = p
-                _fb_player_team[team_id] = links
-                
-                return squad
+        links, players_dict = _fetch_team_squad_from_db(team_id)
+        if links:
+            squad = _build_squad_list(links, players_dict)
+            _fb_squads_cache[team_id] = (now, squad)
+            _fb_players.update(players_dict)
+            _fb_player_team[team_id] = links
+            return squad
     except Exception as e:
         print(f"Failed to dynamically load football squad for team {team_id} from Supabase: {e}")
-        
+
     # 3. Fall back to static startup cache (and scorer fallback logic) if DB query failed or returned nothing
     squad_rows = _fb_player_team.get(team_id, [])
-    squad = []
     if squad_rows:
-        for s in squad_rows:
-            p = _fb_players.get(s["player_id"])
-            if not p:
-                continue
-            squad.append({
-                "id": p["id"],
-                "name": p.get("name", ""),
-                "position": s.get("position") or p.get("position", ""),
-                "nationality": p.get("nationality", ""),
-                "dateOfBirth": p.get("date_of_birth") or "",
-                "age": _age_from_dob(p.get("date_of_birth")),
-            })
-    else:
-        # Fall back to scorers/assisters only
-        for r in _fb_player_stats_by_team.get(team_id, []):
-            p = _fb_players.get(r["player_id"])
-            if not p:
-                continue
-            squad.append({
-                "id": p["id"],
-                "name": p.get("name", ""),
-                "position": p.get("position", ""),
-                "nationality": p.get("nationality", ""),
-                "dateOfBirth": p.get("date_of_birth") or "",
-                "age": _age_from_dob(p.get("date_of_birth")),
-            })
-            
+        return _build_squad_list(squad_rows, _fb_players)
+
+    squad = []
+    for r in _fb_player_stats_by_team.get(team_id, []):
+        p = _fb_players.get(r["player_id"])
+        if not p:
+            continue
+        squad.append({
+            "id": p["id"],
+            "name": p.get("name", ""),
+            "position": p.get("position", ""),
+            "nationality": p.get("nationality", ""),
+            "dateOfBirth": p.get("date_of_birth") or "",
+            "age": _age_from_dob(p.get("date_of_birth")),
+        })
+
     return squad
 
 
