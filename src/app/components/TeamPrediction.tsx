@@ -1,10 +1,7 @@
-import { Trophy, History } from 'lucide-react';
 import { useState } from 'react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { NextGameBadge, PredStatCard, ReasoningCard, SectionCard, GenerateButton, type NextGame } from './PredictionShared';
-import { Card } from '@/app/components/ui/card';
-import { Badge } from '@/app/components/ui/badge';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/app/components/ui/table';
+import { StatBox } from './DesignPrimitives';
 
 type TeamGame = {
   gameDate: string;
@@ -14,18 +11,8 @@ type TeamGame = {
   oppScore: number;
   ast: number;
   reb: number;
-  oreb: number;
-  dreb: number;
-  stl: number;
-  blk: number;
   fg3m: number;
-  fg3a: number;
-  fg3Pct: number;
   fgPct: number;
-  ftm: number;
-  fta: number;
-  ftPct: number;
-  tov: number | null;
 };
 
 type Team = {
@@ -34,32 +21,50 @@ type Team = {
   recentGames: TeamGame[];
   seasonAvg: { pts: number; reb: number; ast: number; fg3m: number };
   totalGames: number;
-  nextGame?: NextGame | null;
+  nextGame?: { gameDate: string; matchup: string; opponent: string; homeAway: string } | null;
 };
 
-type TeamPrediction = {
-  pts_predicted: number; pts_low: number; pts_high: number;
-  ast_predicted: number; ast_low: number; ast_high: number;
-  reb_predicted: number; reb_low: number; reb_high: number;
-  fg3m_predicted: number; fg3m_low: number; fg3m_high: number;
+type TeamPred = {
+  pts_predicted: number;
+  pts_low: number;
+  pts_high: number;
+  ast_predicted: number;
+  ast_low: number;
+  ast_high: number;
+  reb_predicted: number;
+  reb_low: number;
+  reb_high: number;
+  fg3m_predicted: number;
+  fg3m_low: number;
+  fg3m_high: number;
   fgPct_predicted: number;
+  opponent?: string;
+  opp_pts_predicted?: number;
+  win_probability?: number;
+  spread?: number;
 };
 
-const EMPTY: TeamPrediction = {
-  pts_predicted: 0, pts_low: 0, pts_high: 0,
-  ast_predicted: 0, ast_low: 0, ast_high: 0,
-  reb_predicted: 0, reb_low: 0, reb_high: 0,
-  fg3m_predicted: 0, fg3m_low: 0, fg3m_high: 0,
+const EMPTY: TeamPred = {
+  pts_predicted: 0,
+  pts_low: 0,
+  pts_high: 0,
+  ast_predicted: 0,
+  ast_low: 0,
+  ast_high: 0,
+  reb_predicted: 0,
+  reb_low: 0,
+  reb_high: 0,
+  fg3m_predicted: 0,
+  fg3m_low: 0,
+  fg3m_high: 0,
   fgPct_predicted: 0,
 };
 
-const HEAD_CLS = 'text-[11px] font-semibold tracking-wider text-gray-500 whitespace-nowrap h-10 px-3';
-
 export function TeamPrediction({ team }: { team: Team }) {
   const [loading, setLoading] = useState(false);
-  const [prediction, setPrediction] = useState<TeamPrediction>(EMPTY);
+  const [prediction, setPrediction] = useState<TeamPred>(EMPTY);
   const [reason, setReason] = useState(
-    'Click "Generate AI Prediction" to analyze recent games and predict the next team performance.'
+    'Click "Generate prediction" to analyze recent games and project the next team performance.',
   );
   const [hasGenerated, setHasGenerated] = useState(false);
 
@@ -75,11 +80,23 @@ export function TeamPrediction({ team }: { team: Team }) {
       const data = await response.json();
       const p = typeof data === 'string' ? JSON.parse(data) : data;
       setPrediction({
-        pts_predicted: p.pts_predicted ?? 0, pts_low: p.pts_low ?? 0, pts_high: p.pts_high ?? 0,
-        ast_predicted: p.ast_predicted ?? 0, ast_low: p.ast_low ?? 0, ast_high: p.ast_high ?? 0,
-        reb_predicted: p.reb_predicted ?? 0, reb_low: p.reb_low ?? 0, reb_high: p.reb_high ?? 0,
-        fg3m_predicted: p.fg3m_predicted ?? 0, fg3m_low: p.fg3m_low ?? 0, fg3m_high: p.fg3m_high ?? 0,
+        pts_predicted: p.pts_predicted ?? 0,
+        pts_low: p.pts_low ?? 0,
+        pts_high: p.pts_high ?? 0,
+        ast_predicted: p.ast_predicted ?? 0,
+        ast_low: p.ast_low ?? 0,
+        ast_high: p.ast_high ?? 0,
+        reb_predicted: p.reb_predicted ?? 0,
+        reb_low: p.reb_low ?? 0,
+        reb_high: p.reb_high ?? 0,
+        fg3m_predicted: p.fg3m_predicted ?? 0,
+        fg3m_low: p.fg3m_low ?? 0,
+        fg3m_high: p.fg3m_high ?? 0,
         fgPct_predicted: p.fgPct_predicted ?? 0,
+        opponent: p.opponent,
+        opp_pts_predicted: p.opp_pts_predicted,
+        win_probability: p.win_probability,
+        spread: p.spread,
       });
       setReason(p.prediction_reasoning ?? 'No reasoning provided.');
       setHasGenerated(true);
@@ -92,125 +109,173 @@ export function TeamPrediction({ team }: { team: Team }) {
     }
   };
 
-  const hasTov = team.recentGames.some(g => g.tov != null);
-  const wins = team.recentGames.filter(g => g.wl === 'W').length;
+  const oppAbbr = prediction.opponent || team.nextGame?.opponent || 'OPP';
+  const winP = prediction.win_probability ?? 50;
+  const spreadStr =
+    prediction.spread != null
+      ? prediction.spread > 0
+        ? `+${prediction.spread.toFixed(1)}`
+        : prediction.spread.toFixed(1)
+      : '—';
 
   return (
     <div className="space-y-6">
-      {/* Team Header */}
-      <Card className="relative gap-0 overflow-hidden border-white/[0.07] bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/60 p-6">
-        <div aria-hidden className="absolute -top-16 -right-10 w-56 h-56 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-2xl text-white font-bold tracking-tight mb-1.5">{team.name}</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-gray-300">
-                NBA · {team.totalGames} games this season
-              </Badge>
-              {team.recentGames.length > 0 && (
-                <Badge variant="outline" className="rounded-full border-orange-500/25 bg-orange-500/10 px-2.5 py-1 text-xs font-semibold text-orange-300">
-                  {wins}–{team.recentGames.length - wins} last {team.recentGames.length}
-                </Badge>
-              )}
+      <div className="panel flex flex-wrap items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-3xl font-bold">{team.name}</h2>
+          <p className="num text-sm text-muted-foreground">
+            {team.abbr} · {team.totalGames} games logged
+          </p>
+        </div>
+        {team.nextGame && (
+          <div className="rounded-lg bg-secondary px-4 py-2 text-sm">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">Next game</div>
+            <div className="font-semibold">
+              {team.nextGame.matchup} · <span className="num text-primary">{team.nextGame.gameDate}</span>
             </div>
           </div>
-          <NextGameBadge nextGame={team.nextGame} />
-        </div>
-      </Card>
+        )}
+      </div>
 
-      {/* Recent Games Table */}
-      <SectionCard
-        icon={<History className="size-4 text-orange-400" />}
-        title="Recent Games"
-        action={<span className="text-xs text-gray-500">{team.recentGames.length} games</span>}
-        contentClassName="p-0"
-      >
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 stagger">
+        <StatBox label="Season PPG" value={team.seasonAvg.pts} />
+        <StatBox label="Season RPG" value={team.seasonAvg.reb} />
+        <StatBox label="Season APG" value={team.seasonAvg.ast} />
+        <StatBox label="Season 3PM" value={team.seasonAvg.fg3m} />
+      </div>
+
+      {/* Win Probability, Projected Score & Spread + Detailed Projections */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="panel p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">AI stat projections</h3>
+              <p className="text-xs text-muted-foreground">Range shows low – high confidence interval</p>
+            </div>
+            <button
+              type="button"
+              onClick={generatePrediction}
+              disabled={loading}
+              className="glow inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+            >
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              {loading ? 'Analyzing…' : hasGenerated ? 'Regenerate' : 'Generate prediction'}
+            </button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5 stagger">
+            <StatBox
+              label="PTS"
+              value={hasGenerated ? prediction.pts_predicted.toFixed(0) : '—'}
+              hint={hasGenerated ? `${prediction.pts_low.toFixed(0)}–${prediction.pts_high.toFixed(0)}` : undefined}
+              accent={hasGenerated}
+            />
+            <StatBox
+              label="AST"
+              value={hasGenerated ? prediction.ast_predicted.toFixed(0) : '—'}
+              hint={hasGenerated ? `${prediction.ast_low.toFixed(0)}–${prediction.ast_high.toFixed(0)}` : undefined}
+            />
+            <StatBox
+              label="REB"
+              value={hasGenerated ? prediction.reb_predicted.toFixed(0) : '—'}
+              hint={hasGenerated ? `${prediction.reb_low.toFixed(0)}–${prediction.reb_high.toFixed(0)}` : undefined}
+            />
+            <StatBox
+              label="3PM"
+              value={hasGenerated ? prediction.fg3m_predicted.toFixed(0) : '—'}
+              hint={hasGenerated ? `${prediction.fg3m_low.toFixed(0)}–${prediction.fg3m_high.toFixed(0)}` : undefined}
+            />
+            <StatBox
+              label="FG%"
+              value={hasGenerated ? `${(prediction.fgPct_predicted * 100).toFixed(1)}%` : '—'}
+            />
+          </div>
+
+          <div className="mt-4 rounded-lg bg-secondary p-4 text-sm text-foreground">
+            <span className="font-semibold text-primary">Reasoning: </span>
+            {reason}
+          </div>
+        </div>
+
+        {/* Matchup Win Probability & Spread Card */}
+        <div className="panel p-6">
+          <h3 className="font-semibold">Next game prediction</h3>
+          <div className="mt-4 flex items-center justify-between font-display text-lg font-bold">
+            <span>{team.abbr}</span>
+            <span className="text-muted-foreground">vs</span>
+            <span>{oppAbbr}</span>
+          </div>
+          <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="fill bg-primary transition-all duration-500"
+              style={{ width: `${hasGenerated ? winP : 50}%` }}
+            />
+            <div className="flex-1 bg-accent" />
+          </div>
+          <div className="num mt-2 flex justify-between text-sm">
+            <span className="text-primary">{hasGenerated ? `${winP}%` : '—'}</span>
+            <span className="text-accent">{hasGenerated ? `${100 - winP}%` : '—'}</span>
+          </div>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <StatBox
+              label="Proj. score"
+              value={
+                hasGenerated && prediction.opp_pts_predicted != null
+                  ? `${prediction.pts_predicted.toFixed(0)}–${prediction.opp_pts_predicted}`
+                  : '—'
+              }
+            />
+            <StatBox label="Spread" value={hasGenerated ? spreadStr : '—'} accent={hasGenerated} />
+          </div>
+        </div>
+      </div>
+
+      <div className="panel overflow-hidden">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <span className="text-sm font-semibold">Recent games</span>
+          <span className="num text-xs text-muted-foreground">{team.recentGames.length} games</span>
+        </div>
         <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-gray-950/80">
-              <TableRow className="hover:bg-transparent border-white/[0.06]">
-                <TableHead className={`${HEAD_CLS} sticky left-0 bg-gray-950`}>DATE</TableHead>
-                <TableHead className={HEAD_CLS}>MATCHUP</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>W/L</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>PTS</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>OPP</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>AST</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>REB</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>OREB</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>DREB</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>STL</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>BLK</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FG%</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FG3M</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FG3A</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FG3%</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FTM</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FTA</TableHead>
-                <TableHead className={`${HEAD_CLS} text-center`}>FT%</TableHead>
-                {hasTov && <TableHead className={`${HEAD_CLS} text-center`}>TOV</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-white/[0.04]">
-              {team.recentGames.map((game, i) => (
-                <TableRow key={i} className="border-white/[0.04] hover:bg-white/[0.03]">
-                  <TableCell className="px-3 py-3 text-white sticky left-0 bg-gray-900 whitespace-nowrap">{game.gameDate}</TableCell>
-                  <TableCell className="px-3 py-3 text-gray-300 whitespace-nowrap">{game.matchup}</TableCell>
-                  <TableCell className="px-3 py-3 text-center">
-                    <Badge className={`size-6 justify-center rounded-md p-0 text-xs font-bold border-transparent ${
-                      game.wl === 'W' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
-                    }`}>{game.wl}</Badge>
-                  </TableCell>
-                  <TableCell className="px-3 py-3 text-center text-orange-300 font-bold tabular-nums">{game.pts}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-400 tabular-nums">{game.oppScore}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-white tabular-nums">{game.ast}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-white tabular-nums">{game.reb}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.oreb}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.dreb}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.stl}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.blk}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{(game.fgPct * 100).toFixed(1)}%</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.fg3m}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.fg3a}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{(game.fg3Pct * 100).toFixed(1)}%</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.ftm}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.fta}</TableCell>
-                  <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{(game.ftPct * 100).toFixed(1)}%</TableCell>
-                  {hasTov && <TableCell className="px-3 py-3 text-center text-gray-300 tabular-nums">{game.tov ?? '—'}</TableCell>}
-                </TableRow>
+          <table className="w-full text-sm">
+            <thead className="bg-card text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="p-3 text-left">Date</th>
+                <th className="p-3 text-left">Matchup</th>
+                <th className="p-3 text-center">Result</th>
+                <th className="p-3 text-center">Score</th>
+                <th className="p-3 text-center">AST</th>
+                <th className="p-3 text-center">REB</th>
+                <th className="p-3 text-center">3PM</th>
+                <th className="p-3 text-center">FG%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {team.recentGames.map((g, i) => (
+                <tr key={i} className="border-t hover:bg-secondary">
+                  <td className="num p-3 whitespace-nowrap">{g.gameDate}</td>
+                  <td className="p-3 whitespace-nowrap">{g.matchup}</td>
+                  <td className="p-3 text-center">
+                    <span
+                      className={`num inline-block rounded px-2 py-0.5 text-xs font-bold ${
+                        g.wl === 'W' ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'
+                      }`}
+                    >
+                      {g.wl}
+                    </span>
+                  </td>
+                  <td className="num p-3 text-center font-semibold">
+                    {g.pts}–{g.oppScore}
+                  </td>
+                  <td className="num p-3 text-center">{g.ast}</td>
+                  <td className="num p-3 text-center">{g.reb}</td>
+                  <td className="num p-3 text-center">{g.fg3m}</td>
+                  <td className="num p-3 text-center">{(g.fgPct * 100).toFixed(1)}%</td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
-      </SectionCard>
-
-      {/* Predicted Stats */}
-      <SectionCard
-        icon={<Trophy className="size-4 text-orange-400" />}
-        title="Predicted Team Stats for Next Game"
-        subtitle={hasGenerated ? 'Range shows low – high confidence interval' : undefined}
-        action={<GenerateButton onClick={generatePrediction} loading={loading} hasGenerated={hasGenerated} />}
-      >
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <PredStatCard label="PTS"  predicted={prediction.pts_predicted}  low={prediction.pts_low}  high={prediction.pts_high}  revealed={hasGenerated} index={0} />
-          <PredStatCard label="AST"  predicted={prediction.ast_predicted}  low={prediction.ast_low}  high={prediction.ast_high}  revealed={hasGenerated} index={1} />
-          <PredStatCard label="REB"  predicted={prediction.reb_predicted}  low={prediction.reb_low}  high={prediction.reb_high}  revealed={hasGenerated} index={2} />
-          <PredStatCard label="FG3M" predicted={prediction.fg3m_predicted} low={prediction.fg3m_low} high={prediction.fg3m_high} revealed={hasGenerated} index={3} />
-          <PredStatCard
-            label="FG%"
-            predicted={prediction.fgPct_predicted}
-            format={(v) => `${(v * 100).toFixed(1)}%`}
-            revealed={hasGenerated}
-            index={4}
-          />
-        </div>
-      </SectionCard>
-
-      {/* Reasoning */}
-      <ReasoningCard
-        title="Reason for Prediction"
-        reason={reason}
-        tip="Consider recent form, home/away splits, back-to-back fatigue, and opponent defense when interpreting predictions."
-      />
+      </div>
     </div>
   );
 }

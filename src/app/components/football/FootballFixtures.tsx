@@ -1,15 +1,9 @@
 import { useState, useEffect } from 'react';
-import { CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
-import { SectionCard } from '../PredictionShared';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/app/components/ui/tabs';
-import { Badge } from '@/app/components/ui/badge';
-import { Skeleton } from '@/app/components/ui/skeleton';
+import { PillTabs } from '../DesignPrimitives';
 import { MatchAnalysisModal } from './MatchAnalysisModal';
 
 type Competition = { id: number | null; code: string; name: string; emblem: string; area: string };
-
 type FixtureTeam = { id: number; name: string; shortName: string; crest: string; tla: string };
 
 type Fixture = {
@@ -25,34 +19,10 @@ type Fixture = {
 
 type When = 'upcoming' | 'results';
 
-const STATUS_LABEL: Record<string, string> = {
-  SCHEDULED: 'Scheduled', TIMED: 'Scheduled', IN_PLAY: 'Live', PAUSED: 'Live',
-  FINISHED: 'FT', POSTPONED: 'Postponed', SUSPENDED: 'Suspended', CANCELLED: 'Cancelled',
-};
-
 function formatFixtureDate(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
-function TeamCrestSmall({ team }: { team: FixtureTeam }) {
-  if (!team.crest) {
-    return (
-      <div className="size-6 rounded-full bg-gray-800 border border-white/[0.08] flex items-center justify-center shrink-0">
-        <span className="text-gray-400 text-[9px] font-bold">{team.tla || team.shortName?.slice(0, 3).toUpperCase()}</span>
-      </div>
-    );
-  }
-  return (
-    <img
-      src={team.crest}
-      alt=""
-      className="size-6 object-contain shrink-0"
-      onError={e => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}
-    />
-  );
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 type Props = {
@@ -65,7 +35,6 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
   const [competitionCode, setCompetitionCode] = useState('ALL');
   const [when, setWhen] = useState<When>('upcoming');
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [loadingComps, setLoadingComps] = useState(true);
   const [loadingFixtures, setLoadingFixtures] = useState(true);
   const [openMatchId, setOpenMatchId] = useState<number | null>(null);
 
@@ -73,136 +42,97 @@ export function FootballFixtures({ onSelectTeam, onSelectCompetition }: Props) {
 
   useEffect(() => {
     fetch(`${BASE}/football/competitions`)
-      .then(r => r.json())
+      .then((r) => r.json())
       .then(setCompetitions)
-      .catch(e => { console.error(e); toast.error('Could not load competitions', { description: 'Please refresh and try again.' }); })
-      .finally(() => setLoadingComps(false));
-  }, []);
+      .catch((e) => {
+        console.error(e);
+        toast.error('Could not load competitions', { description: 'Please refresh and try again.' });
+      });
+  }, [BASE]);
 
   useEffect(() => {
     setLoadingFixtures(true);
     fetch(`${BASE}/football/fixtures?competition_code=${competitionCode}&when=${when}`)
-      .then(r => r.json())
+      .then((r) => r.json())
       .then(setFixtures)
-      .catch(e => { console.error(e); toast.error('Could not load fixtures', { description: 'Please try again in a moment.' }); })
+      .catch((e) => {
+        console.error(e);
+        toast.error('Could not load fixtures', { description: 'Please try again in a moment.' });
+      })
       .finally(() => setLoadingFixtures(false));
-  }, [competitionCode, when]);
-
-  const subtitle = competitionCode === 'ALL'
-    ? 'All competitions'
-    : competitions.find(c => c.code === competitionCode)?.name;
+  }, [competitionCode, when, BASE]);
 
   return (
-    <>
-      <SectionCard
-        icon={<CalendarDays className="size-4 text-green-400" />}
-        title="Fixtures"
-        subtitle={subtitle}
-        accent="green"
-        contentClassName="p-0"
-        action={
-          <div className="flex items-center gap-2 flex-wrap">
-            <Tabs value={when} onValueChange={v => setWhen(v as When)}>
-              <TabsList className="h-auto w-fit rounded-full border border-white/[0.08] bg-white/[0.04] p-1">
-                <TabsTrigger
-                  value="upcoming"
-                  className="rounded-full px-3 py-1 text-xs font-semibold text-gray-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-green-500/25"
-                >
-                  Upcoming
-                </TabsTrigger>
-                <TabsTrigger
-                  value="results"
-                  className="rounded-full px-3 py-1 text-xs font-semibold text-gray-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-600 data-[state=active]:to-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-green-500/25"
-                >
-                  Results
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-            {!loadingComps && competitions.length > 0 && (
-              <Select value={competitionCode} onValueChange={setCompetitionCode}>
-                <SelectTrigger size="sm" className="w-40 border-white/[0.08] bg-white/[0.04] text-white">
-                  <SelectValue placeholder="Competition" />
-                </SelectTrigger>
-                <SelectContent className="border-white/[0.08] bg-gray-900 text-gray-200">
-                  <SelectItem value="ALL">All Competitions</SelectItem>
-                  {competitions.map(c => (
-                    <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        }
-      >
-        {loadingFixtures ? (
-          <div className="space-y-1 p-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 rounded-lg" style={{ animationDelay: `${i * 50}ms` }} />
-            ))}
-          </div>
-        ) : fixtures.length === 0 ? (
-          <div className="p-6 text-center text-gray-500 text-sm">
-            No {when === 'upcoming' ? 'upcoming fixtures' : 'results'} found for this selection.
-          </div>
-        ) : (
-          <div className="divide-y divide-white/[0.05]">
-            {fixtures.map(f => (
-              <div
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PillTabs
+          value={when}
+          onChange={setWhen}
+          items={[
+            ['upcoming', 'Upcoming'],
+            ['results', 'Results'],
+          ]}
+        />
+
+        <select
+          value={competitionCode}
+          onChange={(e) => setCompetitionCode(e.target.value)}
+          className="panel px-3.5 py-2 text-sm outline-none focus:border-primary"
+        >
+          <option value="ALL">All Competitions</option>
+          {competitions.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loadingFixtures ? (
+        <div className="panel h-64 animate-pulse" />
+      ) : fixtures.length === 0 ? (
+        <div className="panel p-8 text-center text-sm text-muted-foreground">No fixtures found.</div>
+      ) : (
+        <div className="panel overflow-hidden stagger">
+          {fixtures.map((f) => {
+            const hasScore = f.score !== null;
+            return (
+              <button
                 key={f.matchId}
-                role="button"
-                tabIndex={0}
+                type="button"
                 onClick={() => setOpenMatchId(f.matchId)}
-                onKeyDown={e => { if (e.key === 'Enter') setOpenMatchId(f.matchId); }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03] transition-colors cursor-pointer"
+                className="grid w-full grid-cols-[80px_1fr_auto_1fr] items-center gap-4 border-b px-5 py-4 text-sm transition-colors last:border-0 hover:bg-secondary"
               >
-                <div className="w-28 shrink-0">
-                  <div className="text-gray-400 text-xs">{formatFixtureDate(f.utcDate)}</div>
-                  <button
-                    onClick={e => { e.stopPropagation(); onSelectCompetition(f.competition.code, f.competition.name); }}
-                    className="mt-1"
-                  >
-                    <Badge variant="outline" className="border-transparent bg-gray-800 px-1.5 py-0 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-green-400 transition-colors">
-                      {f.competition.code}
-                    </Badge>
-                  </button>
-                </div>
-                <div className="flex-1 min-w-0 flex items-center justify-center gap-3">
-                  <button
-                    onClick={e => { e.stopPropagation(); onSelectTeam(f.homeTeam, f.competition.code, f.competition.name); }}
-                    className="flex items-center gap-2 flex-1 justify-end min-w-0 hover:opacity-80"
-                  >
-                    <span className="text-white text-sm font-medium truncate hover:text-green-400 hover:underline transition-colors">{f.homeTeam.shortName}</span>
-                    <TeamCrestSmall team={f.homeTeam} />
-                  </button>
-                  <div className="shrink-0 text-center w-14">
-                    {f.score ? (
-                      <span className="text-white text-sm font-bold tabular-nums">{f.score.home}–{f.score.away}</span>
-                    ) : (
-                      <span className="text-gray-600 text-xs">vs</span>
-                    )}
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); onSelectTeam(f.awayTeam, f.competition.code, f.competition.name); }}
-                    className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80"
-                  >
-                    <TeamCrestSmall team={f.awayTeam} />
-                    <span className="text-white text-sm font-medium truncate hover:text-green-400 hover:underline transition-colors">{f.awayTeam.shortName}</span>
-                  </button>
-                </div>
-                <div className="w-16 shrink-0 text-right">
-                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${f.status === 'FINISHED' ? 'text-gray-500' : 'text-green-400'}`}>
-                    {STATUS_LABEL[f.status] ?? f.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
+                <span className="num text-left text-xs text-muted-foreground">
+                  {formatFixtureDate(f.utcDate)}
+                </span>
+                <span className="truncate text-right font-medium">
+                  {f.homeTeam.shortName || f.homeTeam.name}
+                </span>
+                <span
+                  className={`num rounded-md px-3 py-1 text-sm font-semibold ${
+                    hasScore ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+                  }`}
+                >
+                  {hasScore ? `${f.score!.home}–${f.score!.away}` : '–'}
+                </span>
+                <span className="truncate text-left font-medium">
+                  {f.awayTeam.shortName || f.awayTeam.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {openMatchId !== null && (
-        <MatchAnalysisModal matchId={openMatchId} onClose={() => setOpenMatchId(null)} />
+        <MatchAnalysisModal
+          matchId={openMatchId}
+          onClose={() => setOpenMatchId(null)}
+          onSelectTeam={onSelectTeam}
+          onSelectCompetition={onSelectCompetition}
+        />
       )}
-    </>
+    </div>
   );
 }

@@ -658,6 +658,52 @@ TEAM_IDS = {
     "TOR": 1610612761, "UTA": 1610612762, "WAS": 1610612764,
 }
 
+TEAM_CONFERENCES = {
+    "ATL": "East", "BOS": "East", "BKN": "East", "CHA": "East", "CHI": "East",
+    "CLE": "East", "DET": "East", "IND": "East", "MIA": "East", "MIL": "East",
+    "NYK": "East", "ORL": "East", "PHI": "East", "TOR": "East", "WAS": "East",
+    "DAL": "West", "DEN": "West", "GSW": "West", "HOU": "West", "LAC": "West",
+    "LAL": "West", "MEM": "West", "MIN": "West", "NOP": "West", "OKC": "West",
+    "PHX": "West", "POR": "West", "SAC": "West", "SAS": "West", "UTA": "West",
+}
+
+
+def _compute_team_records() -> dict[str, tuple[int, int]]:
+    """Compute (wins, losses) per team abbreviation from loaded game logs."""
+    records: dict[str, tuple[int, int]] = {}
+    if nba_data_df.empty:
+        return records
+    team_games = nba_data_df.drop_duplicates(subset=["GAME_ID", "TEAM_ABBREVIATION"])
+    for abbr, grp in team_games.groupby("TEAM_ABBREVIATION"):
+        wl = grp["WL"].astype(str).str.upper()
+        w = int((wl == "W").sum())
+        l = int((wl == "L").sum())
+        records[str(abbr)] = (w, l)
+    return records
+
+
+def _enrich_roster_with_stats(players: list[dict], abbr: str) -> list[dict]:
+    """Attach season PPG, RPG, APG from nba_data_df to each roster player."""
+    if nba_data_df.empty or not players:
+        return players
+    team_df = nba_data_df[nba_data_df["TEAM_ABBREVIATION"] == abbr]
+    if team_df.empty:
+        team_df = nba_data_df
+    stats_by_name: dict[str, tuple[float, float, float]] = {}
+    for pname, grp in team_df.groupby("PLAYER_NAME"):
+        dedup = grp.drop_duplicates(subset=["GAME_ID"])
+        stats_by_name[str(pname).strip().lower()] = (
+            round(float(dedup["PTS"].fillna(0).mean()), 1),
+            round(float(dedup["REB"].fillna(0).mean()), 1),
+            round(float(dedup["AST"].fillna(0).mean()), 1),
+        )
+    enriched = []
+    for p in players:
+        key = str(p.get("name", "")).strip().lower()
+        pts, reb, ast = stats_by_name.get(key, (None, None, None))
+        enriched.append({**p, "pts": pts, "reb": reb, "ast": ast})
+    return enriched
+
 
 @app.get("/health")
 def health():
@@ -683,16 +729,129 @@ def reload_data():
 
 @app.get("/teams")
 def get_all_teams():
+    records = _compute_team_records()
     teams = [
         {
             "abbr": abbr,
             "name": ABBR_TO_FULL[abbr],
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
+            "conf": TEAM_CONFERENCES.get(abbr, ""),
+            "w": records.get(abbr, (0, 0))[0],
+            "l": records.get(abbr, (0, 0))[1],
         }
         for abbr, team_id in TEAM_IDS.items()
     ]
     return sorted(teams, key=lambda x: x["name"])
+
+
+_ticker_cache: dict = {"ts": 0.0, "items": []}
+
+
+@app.get("/ticker")
+def get_score_ticker():
+    """Live & recent NBA (ESPN scoreboard + DB fallback) and Football scores for header ticker."""
+    now = time.time()
+    if now - _ticker_cache["ts"] < 60 and _ticker_cache["items"]:
+        return _ticker_cache["items"]
+
+    items: list[dict] = []
+
+    # 1. NBA via ESPN public scoreboard
+    try:
+        import urllib.request as _req
+        with _req.urlopen(
+            "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+            timeout=5,
+        ) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+        for ev in (data.get("events") or [])[:8]:
+            comp = (ev.get("competitions") or [{}])[0]
+            comps = comp.get("competitors") or []
+            if len(comps) < 2:
+                continue
+            away = next((c for c in comps if c.get("homeAway") == "away"), comps[0])
+            home = next((c for c in comps if c.get("homeAway") == "home"), comps[1])
+            st = (ev.get("status") or {}).get("type") or {}
+            state = st.get("state", "pre")
+            if state == "pre":
+                score_str = "vs"
+                meta = st.get("shortDetail") or "Sched"
+                live = False
+            else:
+                score_str = f"{away.get('score', '0')}–{home.get('score', '0')}"
+                meta = st.get("shortDetail") or ("Live" if state == "in" else "Final")
+                live = state == "in"
+            items.append({
+                "sport": "nba",
+                "a": (away.get("team") or {}).get("abbreviation", "AWY"),
+                "b": (home.get("team") or {}).get("abbreviation", "HME"),
+                "s": score_str,
+                "m": meta,
+                "live": live,
+            })
+    except Exception as e:
+        print(f"[ticker] ESPN NBA fetch failed: {e}")
+
+    # Fallback to recent NBA finals from nba_data_df if ESPN returned nothing
+    if not items and not nba_data_df.empty:
+        try:
+            recent_df = nba_data_df.copy()
+            recent_df["GAME_DATE"] = pd.to_datetime(recent_df["GAME_DATE"])
+            pts_by_team = (
+                recent_df.groupby(["GAME_ID", "GAME_DATE", "TEAM_ABBREVIATION"], as_index=False)["PTS"]
+                .sum()
+                .sort_values("GAME_DATE", ascending=False)
+            )
+            seen = set()
+            for gid, grp in pts_by_team.groupby("GAME_ID", sort=False):
+                if len(grp) < 2 or gid in seen:
+                    continue
+                seen.add(gid)
+                r1, r2 = grp.iloc[0], grp.iloc[1]
+                items.append({
+                    "sport": "nba",
+                    "a": str(r1["TEAM_ABBREVIATION"]),
+                    "b": str(r2["TEAM_ABBREVIATION"]),
+                    "s": f"{int(r1['PTS'])}–{int(r2['PTS'])}",
+                    "m": "Final",
+                    "live": False,
+                })
+                if len(items) >= 4:
+                    break
+        except Exception as e:
+            print(f"[ticker] NBA DB fallback failed: {e}")
+
+    # 2. Football live / recent matches from football_server memory
+    try:
+        from football_server import _fb_matches, _fb_teams, _team_short
+        fb_candidates = [
+            m for m in _fb_matches.values()
+            if m.get("status") in ("IN_PLAY", "PAUSED", "FINISHED")
+            and m.get("full_time_home") is not None
+        ]
+        fb_candidates.sort(
+            key=lambda m: (0 if m.get("status") in ("IN_PLAY", "PAUSED") else 1, -(len(m.get("utc_date") or ""))),
+        )
+        fb_candidates.sort(key=lambda m: m.get("utc_date") or "", reverse=True)
+        fb_candidates.sort(key=lambda m: 0 if m.get("status") in ("IN_PLAY", "PAUSED") else 1)
+        for m in fb_candidates[:6]:
+            ht = _fb_teams.get(m["home_team_id"], {})
+            at = _fb_teams.get(m["away_team_id"], {})
+            is_live = m.get("status") in ("IN_PLAY", "PAUSED")
+            items.append({
+                "sport": "football",
+                "a": _team_short(ht) or ht.get("tla", "HOM"),
+                "b": _team_short(at) or at.get("tla", "AWY"),
+                "s": f"{m['full_time_home']}–{m['full_time_away']}",
+                "m": "LIVE" if is_live else "FT",
+                "live": is_live,
+            })
+    except Exception as e:
+        print(f"[ticker] Football fetch failed: {e}")
+
+    _ticker_cache.update(ts=now, items=items)
+    return items
 
 
 @app.get("/team/{abbr}/roster")
@@ -702,6 +861,11 @@ def get_team_roster(abbr: str):
     if not team_id:
         raise HTTPException(status_code=404, detail="Team not found")
 
+    records = _compute_team_records()
+    w, l = records.get(abbr, (0, 0))
+    conf = TEAM_CONFERENCES.get(abbr, "")
+    next_game = get_next_game(abbr)
+
     # 1. Try local memory database cache first (official rosters synced from Supabase)
     roster = _get_nba_roster_with_cache(abbr)
     if roster:
@@ -710,7 +874,11 @@ def get_team_roster(abbr: str):
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
-            "players": roster,
+            "conf": conf,
+            "w": w,
+            "l": l,
+            "nextGame": next_game,
+            "players": _enrich_roster_with_stats(roster, abbr),
         }
 
     # 2. Try deriving roster from game logs in memory as fallback
@@ -763,7 +931,11 @@ def get_team_roster(abbr: str):
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
-            "players": players,
+            "conf": conf,
+            "w": w,
+            "l": l,
+            "nextGame": next_game,
+            "players": _enrich_roster_with_stats(players, abbr),
         }
 
     # 3. Fallback: If no database data is available, fetch from live NBA API
@@ -788,7 +960,11 @@ def get_team_roster(abbr: str):
             "name": ABBR_TO_FULL.get(abbr, abbr),
             "teamId": team_id,
             "logoUrl": f"https://cdn.nba.com/logos/nba/{team_id}/global/L/logo.svg",
-            "players": players,
+            "conf": conf,
+            "w": w,
+            "l": l,
+            "nextGame": next_game,
+            "players": _enrich_roster_with_stats(players, abbr),
         }
 
     except Exception as e:
@@ -1467,9 +1643,40 @@ prediction_reasoning must be 2-3 sentences.
 Do not use markdown. Do not wrap in code blocks.
 """
 
-    return _model_anchored(model_payload, prompt, fallback_reasoning,
+    result = _model_anchored(model_payload, prompt, fallback_reasoning,
                            float_keys=("fgPct_predicted",),
                            allow_wide=bool(news_ctx and news_ctx.get("noteworthy")))
+
+    # Compute opponent projected score, win probability, and point spread
+    opp_pts_predicted = round(tavg(games, 'oppScore')) or 110
+    if opp_abbr:
+        opp_df = nba_data_df[nba_data_df['TEAM_ABBREVIATION'] == opp_abbr].copy()
+        if not opp_df.empty:
+            opp_df['GAME_DATE'] = pd.to_datetime(opp_df['GAME_DATE'])
+            opp_df = opp_df.fillna(0)
+            opp_games = []
+            for gid, grp in opp_df.groupby('GAME_ID'):
+                og = _build_team_game(grp, 0)
+                og['_sort'] = grp['GAME_DATE'].iloc[0]
+                opp_games.append(og)
+            opp_games.sort(key=lambda x: x['_sort'], reverse=True)
+            opp_ha = "AWAY" if home_away == "HOME" else ("HOME" if home_away == "AWAY" else None)
+            opp_b2b = detect_next_b2b(opp_games, next_game['gameDate'] if next_game else None)
+            opp_proj = project_stats(
+                opp_games, {"PTS": "pts"}, def_factors.get(abbr), opp_ha, opp_b2b,
+            )
+            opp_pts_predicted = int(round(opp_proj["PTS"]["predicted"]))
+
+    import math as _math
+    margin = float(result.get("pts_predicted", 110)) - float(opp_pts_predicted)
+    win_prob = int(round(max(5.0, min(95.0, 100.0 / (1.0 + _math.exp(-margin / 6.5))))))
+    spread = round(-margin * 2.0) / 2.0
+
+    result["opponent"] = opp_abbr or "OPP"
+    result["opp_pts_predicted"] = int(opp_pts_predicted)
+    result["win_probability"] = win_prob
+    result["spread"] = spread
+    return result
 
 
 # ── Football routes ───────────────────────────────────────────────────────────

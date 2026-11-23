@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import { Search, Loader2, Target } from 'lucide-react';
-import { Card } from '@/app/components/ui/card';
-import { Input } from '@/app/components/ui/input';
-import { Button } from '@/app/components/ui/button';
-import { Badge } from '@/app/components/ui/badge';
-import { Skeleton } from '@/app/components/ui/skeleton';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { TextAvatar } from '../DesignPrimitives';
 
 export type PlayerSearchResult = {
-  id: number;
+  playerId: number;
   name: string;
   position: string;
   nationality: string;
@@ -15,174 +12,101 @@ export type PlayerSearchResult = {
   teamName: string;
   teamCrest: string;
   competitionCode: string;
-  competitionName: string;
   goals: number;
   assists: number;
   playedMatches: number;
-  penalties: number | null;
-};
-
-const LEAGUE_COLORS: Record<string, string> = {
-  PL:  'bg-purple-500/15 text-purple-300',
-  PD:  'bg-red-500/15    text-red-300',
-  BL1: 'bg-yellow-500/15 text-yellow-300',
-  SA:  'bg-blue-500/15   text-blue-300',
-  FL1: 'bg-cyan-500/15   text-cyan-300',
-  CL:  'bg-indigo-500/15 text-indigo-300',
-  DED: 'bg-orange-500/15 text-orange-300',
-  PPL: 'bg-emerald-500/15 text-emerald-300',
-  ELC: 'bg-pink-500/15   text-pink-300',
-  BSA: 'bg-teal-500/15   text-teal-300',
-};
-
-const POS_COLOR: Record<string, string> = {
-  Goalkeeper: 'bg-amber-500/15 text-amber-300',
-  Defence:    'bg-blue-500/15  text-blue-300',
-  Midfield:   'bg-green-500/15 text-green-300',
-  Offence:    'bg-red-500/15   text-red-300',
+  involvement: number;
 };
 
 type Props = {
   onSelectPlayer: (result: PlayerSearchResult) => void;
-  onSelectTeam: (result: PlayerSearchResult) => void;
-  selectedPlayerId: number | null;
 };
 
-export function FootballPlayerSearch({ onSelectPlayer, onSelectTeam, selectedPlayerId }: Props) {
-  const [query, setQuery]     = useState('');
+export function FootballPlayerSearch({ onSelectPlayer }: Props) {
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlayerSearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
-  const handleSearch = async () => {
+  const search = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const q = query.trim();
-    if (!q || q.length < 2) return;
-    setLoading(true);
-    setSearched(true);
+    if (!q) return;
+    setSearching(true);
     setNotFound(false);
     try {
-      const r    = await fetch(`${BASE}/football/players/search?name=${encodeURIComponent(q)}`);
+      const r = await fetch(`${BASE}/football/players/search?name=${encodeURIComponent(q)}`);
+      if (!r.ok) throw new Error('Search failed');
       const data = await r.json();
-      setResults(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length === 0) setNotFound(true);
-    } catch {
-      setResults([]);
+      const list = Array.isArray(data) ? data : [];
+      setResults(list);
+      if (list.length === 0) setNotFound(true);
+    } catch (err) {
+      console.error(err);
+      toast.error('Search failed', { description: 'Could not search football players right now.' });
     } finally {
-      setLoading(false);
+      setSearching(false);
     }
   };
 
   return (
-    <Card className="gap-0 overflow-hidden border-white/[0.07] bg-gray-900/80 py-0 flex flex-col" style={{ maxHeight: 'calc(100vh - 14rem)' }}>
-      {/* Search bar */}
-      <div className="p-3 border-b border-white/[0.06]">
-        <div className="flex items-center gap-2">
-          <Input
-            type="text"
+    <div className="space-y-6">
+      <div className="mx-auto max-w-2xl py-6 text-center">
+        <h2 className="text-3xl font-bold md:text-4xl">
+          Search football <span className="text-shine">players</span>
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Find any player across top European competitions and inspect their season output.
+        </p>
+        <form onSubmit={search} className="mt-6 flex gap-2">
+          <input
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-            placeholder="Search players (press Enter)…"
-            className="flex-1 h-auto rounded-lg border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus-visible:ring-green-500/40 focus-visible:border-green-500/50"
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search player (e.g. Haaland, Saka, Yamal)…"
+            className="panel flex-1 px-5 py-3.5 text-base outline-none focus:border-primary"
           />
-          <Button
-            onClick={handleSearch}
-            disabled={loading}
-            size="icon"
-            className="shrink-0 rounded-lg bg-green-600 hover:bg-green-700"
+          <button
+            type="submit"
+            disabled={searching}
+            className="glow inline-flex items-center gap-2 rounded-xl bg-primary px-6 font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95 disabled:opacity-60"
           >
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-          </Button>
-        </div>
+            {searching && <Loader2 className="size-4 animate-spin" />}
+            Search
+          </button>
+        </form>
       </div>
 
-      {/* Results list */}
-      <div className="flex-1 overflow-y-auto divide-y divide-white/[0.05]">
-        {!searched ? (
-          <div className="flex flex-col items-center justify-center gap-4 py-12 px-4 text-center">
-            <Target className="size-10 text-gray-700" />
-            <p className="text-gray-500 text-sm">
-              Search all squad members across the Premier League, La Liga, Bundesliga, Serie A,
-              Ligue 1, Champions League, Eredivisie, Primeira Liga, Championship & Brasileirão
-            </p>
-          </div>
-        ) : loading ? (
-          <div className="space-y-1 p-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
-            ))}
-          </div>
-        ) : notFound ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-12 px-4 text-center">
-            <p className="text-gray-500 text-sm">No players found for "{query}".</p>
-            <p className="text-gray-600 text-xs">Try searching by last name (e.g. "Saka", "Mbappé").</p>
-          </div>
-        ) : (
-          results.map(r => {
-            const isSelected = selectedPlayerId === r.id;
-            return (
-              <div
-                key={r.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectPlayer(r)}
-                onKeyDown={e => { if (e.key === 'Enter') onSelectPlayer(r); }}
-                className={`w-full p-3 flex items-center gap-3 transition-colors text-left hover:bg-white/[0.03] cursor-pointer ${
-                  isSelected ? 'bg-green-500/10 border-l-2 border-green-500 pl-2.5' : ''
-                }`}
-              >
-                {/* Team crest */}
-                <button
-                  onClick={e => { e.stopPropagation(); onSelectTeam(r); }}
-                  className="shrink-0 size-9 rounded-full bg-gray-800 border border-white/[0.08] flex items-center justify-center overflow-hidden"
-                >
-                  {r.teamCrest ? (
-                    <img
-                      src={r.teamCrest}
-                      alt={r.teamName}
-                      className="size-7 object-contain"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  ) : (
-                    <span className="text-gray-400 text-xs">⚽</span>
-                  )}
-                </button>
+      {notFound && (
+        <div className="panel p-8 text-center text-sm text-muted-foreground">
+          No players found matching &ldquo;{query}&rdquo;.
+        </div>
+      )}
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm font-medium truncate">{r.name}</div>
-                  <button
-                    onClick={e => { e.stopPropagation(); onSelectTeam(r); }}
-                    className="text-gray-500 text-xs mt-0.5 truncate block hover:text-green-400 hover:underline transition-colors"
-                  >
-                    {r.teamName}
-                  </button>
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <Badge variant="outline" className={`border-transparent px-1.5 py-0 text-[10px] ${LEAGUE_COLORS[r.competitionCode] ?? 'bg-gray-700 text-gray-400'}`}>
-                      {r.competitionCode}
-                    </Badge>
-                    {r.position && (
-                      <Badge variant="outline" className={`border-transparent px-1.5 py-0 text-[10px] ${POS_COLOR[r.position] ?? 'bg-gray-700 text-gray-400'}`}>
-                        {r.position === 'Goalkeeper' ? 'GK' : r.position === 'Defence' ? 'DEF' : r.position === 'Midfield' ? 'MID' : r.position === 'Offence' ? 'FWD' : r.position}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                {/* Goals/assists */}
-                <div className="text-right shrink-0">
-                  <div className="text-green-400 text-sm font-bold">{r.goals}G</div>
-                  <div className="text-gray-400 text-xs">{r.assists}A</div>
-                  <div className="text-gray-600 text-xs">{r.playedMatches}gp</div>
+      {results.length > 0 && (
+        <div className="panel overflow-hidden stagger">
+          {results.map((p) => (
+            <button
+              key={`${p.playerId}-${p.teamId}`}
+              type="button"
+              onClick={() => onSelectPlayer(p)}
+              className="flex w-full items-center gap-4 border-b px-5 py-3 text-left transition-colors last:border-0 hover:bg-secondary"
+            >
+              <TextAvatar label={p.name} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{p.name}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {p.teamName} · {p.position} · {p.competitionCode}
                 </div>
               </div>
-            );
-          })
-        )}
-      </div>
-    </Card>
+              <span className="num text-sm text-muted-foreground">
+                {p.goals}G · {p.assists}A
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

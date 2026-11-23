@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
-import { ArrowRight, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlayerPhoto } from './PlayerPhoto';
 import { BackButton } from './BackButton';
-import { Card } from '@/app/components/ui/card';
-import { Badge } from '@/app/components/ui/badge';
-import { Skeleton } from '@/app/components/ui/skeleton';
 
 export type RosterPlayer = {
   id: number;
@@ -14,6 +10,9 @@ export type RosterPlayer = {
   position: string;
   height: string;
   weight: string;
+  pts?: number | null;
+  reb?: number | null;
+  ast?: number | null;
 };
 
 type RosterData = {
@@ -21,6 +20,10 @@ type RosterData = {
   name: string;
   teamId: number;
   logoUrl: string;
+  conf?: string;
+  w?: number;
+  l?: number;
+  nextGame?: { gameDate: string; matchup: string; opponent: string; homeAway: string } | null;
   players: RosterPlayer[];
 };
 
@@ -35,130 +38,144 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
   const [roster, setRoster] = useState<RosterData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [full, setFull] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     setError('');
     setRoster(null);
+    setFull(false);
     fetch(`${import.meta.env.VITE_API_URL}/team/${abbr}/roster`)
-      .then(r => {
+      .then((r) => {
         if (!r.ok) throw new Error('Failed to load roster');
         return r.json();
       })
       .then(setRoster)
-      .catch(e => { setError(e.message); toast.error('Could not load roster', { description: e.message }); })
+      .catch((e) => {
+        setError(e.message);
+        toast.error('Could not load roster', { description: e.message });
+      })
       .finally(() => setLoading(false));
   }, [abbr]);
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-fade-in">
-        <Skeleton className="h-28 rounded-2xl" />
-        <Skeleton className="h-16 rounded-2xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 rounded-2xl" style={{ animationDelay: `${i * 60}ms` }} />
-          ))}
-        </div>
+      <div className="space-y-4">
+        <div className="panel h-24 animate-pulse" />
+        <div className="panel h-64 animate-pulse" />
       </div>
     );
   }
 
   if (error || !roster) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 animate-fade-in">
-        <p className="text-red-400">{error || 'Failed to load roster'}</p>
-        <BackButton onClick={onBack} label="Back to teams" />
+      <div className="panel p-8 text-center">
+        <p className="text-destructive">{error || 'Failed to load roster'}</p>
+        <div className="mt-4">
+          <BackButton onClick={onBack} label="Back to teams" />
+        </div>
       </div>
     );
   }
 
+  const more = roster.players.length > 5;
+  const hasRecord = roster.w != null && roster.l != null && roster.w + roster.l > 0;
+
   return (
-    <div className="space-y-6 animate-fade-up">
-      {/* Team header */}
-      <Card className="relative gap-0 overflow-hidden border-white/[0.07] bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/70 p-5">
-        {/* oversized ghost logo backdrop */}
-        <img
-          src={roster.logoUrl}
-          alt=""
-          aria-hidden
-          className="absolute -right-8 -top-10 size-44 object-contain opacity-[0.07] blur-[1px] pointer-events-none select-none"
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-        <div className="relative flex items-center gap-4">
-          <BackButton onClick={onBack} label="Teams" />
-          <div className="relative">
-            <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl" />
-            <img
-              src={roster.logoUrl}
-              alt={roster.name}
-              className="relative size-16 object-contain drop-shadow-xl"
-              onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
-            />
-          </div>
+    <div className="rise">
+      <BackButton onClick={onBack} label="Teams" />
+
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <img
+            src={roster.logoUrl}
+            alt={roster.name}
+            className="size-12 object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
           <div>
-            <h2 className="font-display text-2xl text-white font-bold tracking-tight">{roster.name}</h2>
-            <p className="text-gray-400 text-sm mt-0.5">
-              <span className="text-orange-400 font-semibold">{roster.players.length}</span> players · tap a player for stats &amp; prediction
+            <h2 className="text-3xl font-bold">{roster.name}</h2>
+            <p className="num text-xs text-muted-foreground">
+              {roster.abbr}
+              {roster.conf ? ` · ${roster.conf}` : ''}
+              {hasRecord ? ` · ${roster.w}–${roster.l}` : ''}
+              {roster.nextGame ? ` · Next: ${roster.nextGame.matchup} (${roster.nextGame.gameDate})` : ''}
             </p>
           </div>
         </div>
-      </Card>
 
-      {/* Team Prediction CTA */}
-      <button
-        onClick={onPredict}
-        className="w-full flex items-center justify-between relative overflow-hidden bg-gradient-to-r from-orange-500/15 via-orange-500/10 to-amber-500/5 border border-orange-500/30 hover:border-orange-400/70 rounded-2xl p-4 transition-all duration-300 group hover:shadow-lg hover:shadow-orange-500/15"
-      >
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl shadow-lg shadow-orange-500/30 group-hover:scale-105 transition-transform">
-            <TrendingUp className="size-5 text-white" />
-          </div>
-          <div className="text-left">
-            <div className="text-white font-bold">Check Team Prediction</div>
-            <div className="text-gray-400 text-sm">Recent stats &amp; AI-powered projection for the next game</div>
-          </div>
+        <button
+          type="button"
+          onClick={onPredict}
+          className="glow rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
+        >
+          Next game prediction →
+        </button>
+      </div>
+
+      <div className="panel overflow-hidden">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <span className="text-sm font-semibold">Roster</span>
+          <span className="num text-xs text-muted-foreground">{roster.players.length} players</span>
         </div>
-        <ArrowRight className="size-5 text-orange-400 group-hover:translate-x-1.5 transition-transform duration-300" />
-      </button>
 
-      {/* Player grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 stagger-children">
-        {roster.players.map((player, i) => (
+        <div className={more && !full ? 'max-h-[320px] overflow-y-auto' : ''}>
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-card text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="p-3 text-left">Player</th>
+                <th className="p-3 text-center">Pos</th>
+                <th className="p-3 text-center">PTS</th>
+                <th className="p-3 text-center">REB</th>
+                <th className="p-3 text-center">AST</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.players.map((p) => (
+                <tr
+                  key={p.id}
+                  onClick={() => onSelectPlayer(p)}
+                  className="cursor-pointer border-t transition-colors hover:bg-secondary"
+                >
+                  <td className="flex items-center gap-3 p-3 font-medium">
+                    <PlayerPhoto playerId={p.id} name={p.name} size="sm" />
+                    <div className="min-w-0">
+                      <div className="truncate">{p.name}</div>
+                      {p.number && (
+                        <div className="num text-[11px] text-muted-foreground">#{p.number}</div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="num p-3 text-center text-muted-foreground">{p.position || '—'}</td>
+                  <td className="num p-3 text-center font-semibold">
+                    {p.pts != null ? p.pts.toFixed(1) : '—'}
+                  </td>
+                  <td className="num p-3 text-center">
+                    {p.reb != null ? p.reb.toFixed(1) : '—'}
+                  </td>
+                  <td className="num p-3 text-center">
+                    {p.ast != null ? p.ast.toFixed(1) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {more && !full && (
+            <div className="pointer-events-none sticky bottom-0 -mt-12 h-12 bg-gradient-to-t from-card to-transparent" />
+          )}
+        </div>
+
+        {more && (
           <button
-            key={player.id}
-            style={{ ['--i' as any]: i }}
-            onClick={() => onSelectPlayer(player)}
-            className="card-lift bg-gradient-to-b from-gray-900 to-gray-900/60 border border-white/[0.07] hover:border-orange-500/50 rounded-2xl p-4 text-left group hover:shadow-lg hover:shadow-orange-500/10"
+            type="button"
+            onClick={() => setFull(!full)}
+            className="w-full border-t px-5 py-3 text-sm font-medium text-primary transition hover:bg-secondary"
           >
-            <div className="flex items-start gap-3">
-              <div className="relative shrink-0">
-                <div className="absolute inset-0 rounded-full ring-2 ring-transparent group-hover:ring-orange-500/40 transition-all duration-300" />
-                <PlayerPhoto playerId={player.id} name={player.name} size="sm" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-white font-semibold text-sm truncate group-hover:text-orange-300 transition-colors">{player.name}</div>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  {player.number && (
-                    <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04] px-1.5 py-0 text-[10px] text-gray-400">
-                      #{player.number}
-                    </Badge>
-                  )}
-                  {player.position && (
-                    <Badge variant="outline" className="rounded-full border-white/[0.08] bg-white/[0.04] px-1.5 py-0 text-[10px] text-gray-400">
-                      {player.position}
-                    </Badge>
-                  )}
-                </div>
-                {(player.height || player.weight) && (
-                  <div className="text-gray-600 text-xs mt-1">
-                    {[player.height, player.weight ? `${player.weight} lbs` : ''].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-              </div>
-            </div>
+            {full ? 'Show less' : `View full roster · ${roster.players.length} players`}
           </button>
-        ))}
+        )}
       </div>
     </div>
   );
