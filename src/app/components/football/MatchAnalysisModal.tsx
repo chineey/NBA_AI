@@ -68,6 +68,19 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
     setLoading(true);
     setError(null);
     fetch(`${BASE}/football/matches/${matchId}/analysis`)
@@ -92,14 +105,14 @@ export function MatchAnalysisModal({ matchId, onClose, onSelectTeam }: Props) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-3 sm:p-4 backdrop-blur overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/80 p-3 sm:p-6 backdrop-blur"
       onClick={onClose}
     >
       <div
-        className="panel rise glow w-full max-w-xl max-h-[90vh] overflow-y-auto p-4 sm:p-6"
+        className="panel rise glow my-auto w-full max-w-2xl max-h-[88vh] overflow-y-auto p-4 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+        <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-3 flex items-center justify-between gap-2 border-b border-border/40 bg-card/95 px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6 sm:py-3.5">
           <span className="truncate">Match analysis · {data?.competition.name ?? 'Loading…'}</span>
           <button
             type="button"
