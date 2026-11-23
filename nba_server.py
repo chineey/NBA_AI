@@ -21,7 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = genai.Client(api_key=os.getenv("GEMINI_API"))
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API"),
+    http_options=types.HttpOptions(api_version="v1beta"),
+)
 
 import json as _json
 from nba_prediction_model import (

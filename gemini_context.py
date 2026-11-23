@@ -29,7 +29,11 @@ def _get_client():
         if not api_key:
             return None
         from google import genai
-        _client = genai.Client(api_key=api_key)
+        from google.genai import types
+        _client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(api_version="v1beta"),
+        )
     return _client
 
 

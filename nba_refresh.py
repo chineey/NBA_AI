@@ -47,10 +47,10 @@ def fix_abbr(abbr: str) -> str:
 
 
 def current_season_start() -> date:
-    """Return Oct 1 of the current NBA season start year."""
+    """Return Oct 14 of the current NBA season start year."""
     today = date.today()
     year = today.year if today.month >= 10 else today.year - 1
-    return date(year, 10, 1)
+    return date(year, 10, 14)
 
 
 def current_season_label() -> str:

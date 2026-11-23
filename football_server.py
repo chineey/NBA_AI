@@ -310,11 +310,8 @@ FOOTBALL_NEWS_TTL = 1800  # re-research a team/player at most every 30 min
 def _get_gemini_client():
     global _gemini_client
     if _gemini_client is None:
-        api_key = os.getenv("GEMINI_API")
-        if not api_key:
-            return None
-        from google import genai
-        _gemini_client = genai.Client(api_key=api_key)
+        from gemini_context import _get_client
+        _gemini_client = _get_client()
     return _gemini_client
 
 
