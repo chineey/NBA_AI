@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { PlayerPhoto } from './PlayerPhoto';
 import { BackButton } from './BackButton';
+import { TeamPrediction } from './TeamPrediction';
 
 export type RosterPlayer = {
   id: number;
@@ -31,11 +32,11 @@ type Props = {
   abbr: string;
   onSelectPlayer: (player: RosterPlayer) => void;
   onBack: () => void;
-  onPredict: () => void;
 };
 
-export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
+export function TeamRoster({ abbr, onSelectPlayer, onBack }: Props) {
   const [roster, setRoster] = useState<RosterData | null>(null);
+  const [teamData, setTeamData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [full, setFull] = useState(false);
@@ -44,13 +45,22 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
     setLoading(true);
     setError('');
     setRoster(null);
+    setTeamData(null);
     setFull(false);
-    fetch(`${import.meta.env.VITE_API_URL}/team/${abbr}/roster`)
-      .then((r) => {
+
+    Promise.all([
+      fetch(`${import.meta.env.VITE_API_URL}/team/${abbr}/roster`).then((r) => {
         if (!r.ok) throw new Error('Failed to load roster');
         return r.json();
+      }),
+      fetch(`${import.meta.env.VITE_API_URL}/team/${abbr}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ])
+      .then(([rosterRes, teamRes]) => {
+        setRoster(rosterRes);
+        setTeamData(teamRes);
       })
-      .then(setRoster)
       .catch((e) => {
         setError(e.message);
         toast.error('Could not load roster', { description: e.message });
@@ -82,21 +92,21 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
   const hasRecord = roster.w != null && roster.l != null && roster.w + roster.l > 0;
 
   return (
-    <div className="rise">
-      <BackButton onClick={onBack} label="Teams" />
+    <div className="rise space-y-6 min-w-0">
+      <div>
+        <BackButton onClick={onBack} label="Teams" />
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <img
             src={roster.logoUrl}
             alt={roster.name}
-            className="size-12 object-contain"
+            className="size-12 object-contain shrink-0"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
             }}
           />
-          <div>
-            <h2 className="text-3xl font-bold">{roster.name}</h2>
+          <div className="min-w-0">
+            <h2 className="text-2xl sm:text-3xl font-bold truncate">{roster.name}</h2>
             <p className="num text-xs text-muted-foreground">
               {roster.abbr}
               {roster.conf ? ` · ${roster.conf}` : ''}
@@ -105,14 +115,6 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
             </p>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onPredict}
-          className="glow w-full sm:w-auto rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:scale-[1.02] active:scale-95"
-        >
-          Next game prediction →
-        </button>
       </div>
 
       <div className="panel overflow-hidden">
@@ -122,14 +124,14 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
         </div>
 
         <div className={`overflow-x-auto ${more && !full ? 'max-h-[320px] overflow-y-auto' : ''}`}>
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-card text-xs uppercase text-muted-foreground">
+          <table className="w-full text-xs sm:text-sm">
+            <thead className="sticky top-0 z-10 bg-card text-[11px] sm:text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="p-3 text-left">Player</th>
-                <th className="p-3 text-center">Pos</th>
-                <th className="p-3 text-center">PTS</th>
-                <th className="p-3 text-center">REB</th>
-                <th className="p-3 text-center">AST</th>
+                <th className="p-2.5 sm:p-3 text-left">Player</th>
+                <th className="p-2.5 sm:p-3 text-center">Pos</th>
+                <th className="p-2.5 sm:p-3 text-center">PTS</th>
+                <th className="p-2.5 sm:p-3 text-center">REB</th>
+                <th className="p-2.5 sm:p-3 text-center">AST</th>
               </tr>
             </thead>
             <tbody>
@@ -139,23 +141,23 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
                   onClick={() => onSelectPlayer(p)}
                   className="cursor-pointer border-t transition-colors hover:bg-secondary"
                 >
-                  <td className="flex items-center gap-3 p-3 font-medium">
+                  <td className="flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 font-medium">
                     <PlayerPhoto playerId={p.id} name={p.name} size="sm" />
                     <div className="min-w-0">
-                      <div className="truncate">{p.name}</div>
+                      <div className="truncate max-w-[130px] sm:max-w-none">{p.name}</div>
                       {p.number && (
                         <div className="num text-[11px] text-muted-foreground">#{p.number}</div>
                       )}
                     </div>
                   </td>
-                  <td className="num p-3 text-center text-muted-foreground">{p.position || '—'}</td>
-                  <td className="num p-3 text-center font-semibold">
+                  <td className="num p-2.5 sm:p-3 text-center text-muted-foreground">{p.position || '—'}</td>
+                  <td className="num p-2.5 sm:p-3 text-center font-semibold">
                     {p.pts != null ? p.pts.toFixed(1) : '—'}
                   </td>
-                  <td className="num p-3 text-center">
+                  <td className="num p-2.5 sm:p-3 text-center">
                     {p.reb != null ? p.reb.toFixed(1) : '—'}
                   </td>
-                  <td className="num p-3 text-center">
+                  <td className="num p-2.5 sm:p-3 text-center">
                     {p.ast != null ? p.ast.toFixed(1) : '—'}
                   </td>
                 </tr>
@@ -177,6 +179,8 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack, onPredict }: Props) {
           </button>
         )}
       </div>
+
+      {teamData && <TeamPrediction team={teamData} embedded />}
     </div>
   );
 }

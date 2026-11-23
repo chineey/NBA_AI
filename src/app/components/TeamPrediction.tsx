@@ -60,7 +60,7 @@ const EMPTY: TeamPred = {
   fgPct_predicted: 0,
 };
 
-export function TeamPrediction({ team }: { team: Team }) {
+export function TeamPrediction({ team, embedded = false }: { team: Team; embedded?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [prediction, setPrediction] = useState<TeamPred>(EMPTY);
   const [reason, setReason] = useState(
@@ -119,25 +119,27 @@ export function TeamPrediction({ team }: { team: Team }) {
       : '—';
 
   return (
-    <div className="space-y-6">
-      <div className="panel flex flex-wrap items-center justify-between gap-4 p-6">
-        <div>
-          <h2 className="text-3xl font-bold">{team.name}</h2>
-          <p className="num text-sm text-muted-foreground">
-            {team.abbr} · {team.totalGames} games logged
-          </p>
-        </div>
-        {team.nextGame && (
-          <div className="rounded-lg bg-secondary px-4 py-2 text-sm">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Next game</div>
-            <div className="font-semibold">
-              {team.nextGame.matchup} · <span className="num text-primary">{team.nextGame.gameDate}</span>
-            </div>
+    <div className="space-y-6 min-w-0">
+      {!embedded && (
+        <div className="panel flex flex-wrap items-center justify-between gap-4 p-4 sm:p-6">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold">{team.name}</h2>
+            <p className="num text-sm text-muted-foreground">
+              {team.abbr} · {team.totalGames} games logged
+            </p>
           </div>
-        )}
-      </div>
+          {team.nextGame && (
+            <div className="rounded-lg bg-secondary px-4 py-2 text-sm">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground">Next game</div>
+              <div className="font-semibold">
+                {team.nextGame.matchup} · <span className="num text-primary">{team.nextGame.gameDate}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 stagger">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 stagger">
         <StatBox label="Season PPG" value={team.seasonAvg.pts} />
         <StatBox label="Season RPG" value={team.seasonAvg.reb} />
         <StatBox label="Season APG" value={team.seasonAvg.ast} />
@@ -146,7 +148,7 @@ export function TeamPrediction({ team }: { team: Team }) {
 
       {/* Win Probability, Projected Score & Spread + Detailed Projections */}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="panel p-6">
+        <div className="panel p-4 sm:p-6 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold">AI stat projections</h3>
@@ -198,7 +200,7 @@ export function TeamPrediction({ team }: { team: Team }) {
         </div>
 
         {/* Matchup Win Probability & Spread Card */}
-        <div className="panel p-6">
+        <div className="panel p-4 sm:p-6 min-w-0">
           <h3 className="font-semibold">Next game prediction</h3>
           <div className="mt-4 flex items-center justify-between font-display text-lg font-bold">
             <span>{team.abbr}</span>

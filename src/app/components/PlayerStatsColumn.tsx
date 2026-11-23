@@ -31,24 +31,10 @@ export function PlayerStatsColumn({
   selectedPlayer,
 }: PlayerStatsColumnProps) {
   const season = selectedPlayer.seasonAvg ?? { pts: 0, reb: 0, ast: 0 };
-  const games = selectedPlayer.recentGames ?? [];
-  const recentAvg = games.length
-    ? {
-        pts: games.reduce((s, g) => s + g.pts, 0) / games.length,
-        reb: games.reduce((s, g) => s + g.reb, 0) / games.length,
-        ast: games.reduce((s, g) => s + g.ast, 0) / games.length,
-      }
-    : { pts: 0, reb: 0, ast: 0 };
-
-  const deltaHint = (recent: number, avg: number) => {
-    const diff = recent - avg;
-    if (Math.abs(diff) < 0.05) return undefined;
-    return `${diff > 0 ? '+' : ''}${diff.toFixed(1)} L${games.length} vs season`;
-  };
 
   return (
-    <div className="space-y-4">
-      <div className="panel flex items-center gap-4 p-6">
+    <div className="space-y-4 min-w-0">
+      <div className="panel flex items-center gap-4 p-5 sm:p-6">
         <PlayerPhoto playerId={selectedPlayer.id} name={selectedPlayer.name} size="lg" />
         <div className="min-w-0">
           <h2 className="truncate text-xl font-bold">{selectedPlayer.name}</h2>
@@ -60,10 +46,10 @@ export function PlayerStatsColumn({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 lg:grid-cols-1 stagger">
-        <StatBox label="PPG (Season)" value={season.pts.toFixed(1)} hint={deltaHint(recentAvg.pts, season.pts)} />
-        <StatBox label="RPG (Season)" value={season.reb.toFixed(1)} hint={deltaHint(recentAvg.reb, season.reb)} />
-        <StatBox label="APG (Season)" value={season.ast.toFixed(1)} hint={deltaHint(recentAvg.ast, season.ast)} />
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-1 stagger">
+        <StatBox label="PPG (Season)" value={season.pts.toFixed(1)} />
+        <StatBox label="RPG (Season)" value={season.reb.toFixed(1)} />
+        <StatBox label="APG (Season)" value={season.ast.toFixed(1)} />
       </div>
     </div>
   );

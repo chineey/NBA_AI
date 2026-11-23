@@ -90,42 +90,62 @@ export function Bars({
   labels?: string[];
   lineLabel?: string;
 }) {
-  const max = Math.max(...data, line ?? 0, 1) * 1.15;
+  const max = Math.max(...data, line ?? 0, 1) * 1.18;
   return (
-    <div className="relative flex h-40 sm:h-44 items-end gap-1 sm:gap-2 pt-6">
-      {line !== undefined && line > 0 && (
-        <div
-          className="pointer-events-none absolute inset-x-0 border-t border-dashed border-accent z-10"
-          style={{ bottom: `${Math.min((line / max) * 100, 96)}%` }}
-        >
-          <span className="num absolute -top-5 right-0 text-[11px] sm:text-xs text-accent">
-            {lineLabel ?? `avg ${line.toFixed(1)}`}
-          </span>
+    <div>
+      {/* Plot area: bars and dashed line share the exact same [0, max] baseline and height */}
+      <div className="relative h-40 sm:h-44">
+        {line !== undefined && line > 0 && (
+          <div
+            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-accent z-10"
+            style={{ bottom: `${(line / max) * 100}%` }}
+          >
+            <span className="num absolute -top-5 right-0 rounded bg-card/80 px-1 text-[11px] sm:text-xs text-accent">
+              {lineLabel ?? `avg ${line.toFixed(1)}`}
+            </span>
+          </div>
+        )}
+        <div className="flex h-full items-end gap-1 sm:gap-2">
+          {data.map((v, i) => {
+            const pct = (v / max) * 100;
+            return (
+              <div key={i} className="relative h-full flex-1 min-w-0">
+                <span
+                  className="num pointer-events-none absolute inset-x-0 text-center text-[9px] sm:text-[10px] text-muted-foreground"
+                  style={{ bottom: `calc(${pct}% + 4px)` }}
+                >
+                  {v}
+                </span>
+                <div
+                  className={`absolute inset-x-0 bottom-0 grow rounded-t-md ${
+                    line !== undefined && v >= line ? 'bg-primary' : 'bg-secondary'
+                  }`}
+                  style={{
+                    height: `${Math.max(pct, 2)}%`,
+                    animationDelay: `${i * 45}ms`,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {labels && labels.length > 0 && (
+        <div className="mt-1.5 flex gap-1 sm:gap-2">
+          {labels.map((lbl, i) => (
+            <div key={i} className="flex-1 min-w-0 text-center">
+              <span
+                className={`num block truncate text-[8px] sm:text-[9px] text-muted-foreground ${
+                  i % 2 === 1 ? 'hidden sm:block' : ''
+                }`}
+              >
+                {lbl}
+              </span>
+            </div>
+          ))}
         </div>
       )}
-      {data.map((v, i) => (
-        <div key={i} className="flex flex-1 flex-col items-center gap-1 min-w-0">
-          <span className="num text-[9px] sm:text-[10px] text-muted-foreground">{v}</span>
-          <div
-            className={`w-full grow rounded-t-md ${
-              line !== undefined && v >= line ? 'bg-primary' : 'bg-secondary'
-            }`}
-            style={{
-              height: `${Math.max((v / max) * 124, 4)}px`,
-              animationDelay: `${i * 45}ms`,
-            }}
-          />
-          {labels?.[i] && (
-            <span
-              className={`num truncate max-w-full text-[8px] sm:text-[9px] text-muted-foreground ${
-                i % 2 === 1 ? 'hidden sm:inline' : ''
-              }`}
-            >
-              {labels[i]}
-            </span>
-          )}
-        </div>
-      ))}
     </div>
   );
 }

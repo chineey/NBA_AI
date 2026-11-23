@@ -7,13 +7,12 @@ import { PlayerStatsColumn } from '@/app/components/PlayerStatsColumn';
 import { StatPrediction } from '@/app/components/StatPrediction';
 import { TeamsGrid } from '@/app/components/TeamsGrid';
 import { TeamRoster, type RosterPlayer } from '@/app/components/TeamRoster';
-import { TeamPrediction } from '@/app/components/TeamPrediction';
 import { FootballApp } from '@/app/components/football/FootballApp';
 import { BackButton } from '@/app/components/BackButton';
 
 type Sport = 'nba' | 'football';
 type Mode = 'players' | 'teams';
-type TeamView = 'grid' | 'roster' | 'player' | 'prediction';
+type TeamView = 'grid' | 'roster' | 'player';
 
 const POPULAR_PLAYERS = [
   'LeBron James',
@@ -47,7 +46,6 @@ export default function App() {
   // NBA Teams mode
   const [teamView, setTeamView] = useState<TeamView>('grid');
   const [rosterAbbr, setRosterAbbr] = useState('');
-  const [teamData, setTeamData] = useState<any>(null);
 
   const [loading, setLoading] = useState(false);
   const [ticker, setTicker] = useState<Array<{ sport: string; a: string; b: string; s: string; m: string; live?: boolean }>>([]);
@@ -121,21 +119,6 @@ export default function App() {
     setLoading(false);
   };
 
-  const fetchTeamAndPredict = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/team/${rosterAbbr}`);
-      if (!response.ok) throw new Error('Team not found');
-      const data = await response.json();
-      setTeamData(data);
-      setTeamView('prediction');
-    } catch (error) {
-      console.error('Failed to fetch team data:', error);
-      toast.error('Could not load team data', { description: 'Please try again in a moment.' });
-    }
-    setLoading(false);
-  };
-
   const switchMode = (next: Mode) => {
     setMode(next);
     setSearchQuery('');
@@ -152,7 +135,7 @@ export default function App() {
 
     if (mode === 'players' && selectedPlayer) {
       return (
-        <div className="rise">
+        <div className="rise min-w-0">
           <BackButton
             onClick={() => {
               setSelectedPlayer(null);
@@ -177,7 +160,7 @@ export default function App() {
 
     if (mode === 'teams' && teamView === 'player' && selectedPlayer) {
       return (
-        <div className="rise">
+        <div className="rise min-w-0">
           <BackButton onClick={() => setTeamView('roster')} label="Back to roster" />
           <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
             <PlayerStatsColumn
@@ -189,15 +172,6 @@ export default function App() {
             />
             <StatPrediction player={selectedPlayer} />
           </div>
-        </div>
-      );
-    }
-
-    if (mode === 'teams' && teamView === 'prediction' && teamData) {
-      return (
-        <div className="rise">
-          <BackButton onClick={() => setTeamView('roster')} label="Back to roster" />
-          <TeamPrediction team={teamData} />
         </div>
       );
     }
@@ -263,7 +237,6 @@ export default function App() {
             abbr={rosterAbbr}
             onSelectPlayer={fetchPlayerFromRoster}
             onBack={() => setTeamView('grid')}
-            onPredict={fetchTeamAndPredict}
           />
         ) : (
           <TeamsGrid

@@ -139,9 +139,9 @@ export function StatPrediction({ player }: { player: Player }) {
       : prediction.ast_predicted;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       {/* Bar chart + Season Avg line */}
-      <div className="panel p-6">
+      <div className="panel p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">Recent Form vs Season Average</h3>
@@ -188,7 +188,7 @@ export function StatPrediction({ player }: { player: Player }) {
       </div>
 
       {/* Full AI Prediction Card */}
-      <div className="panel p-6">
+      <div className="panel p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold">AI Next-Game Prediction</h3>
