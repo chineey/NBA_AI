@@ -130,6 +130,8 @@ def _news_section(ctx: dict | None) -> str:
     return (f"\n--- LATEST NEWS (Google Search; may be incomplete) ---\n"
             f"{brief.strip() or 'No recent news found.'}\n")
 
+from db_loader import fetch_table_rows, get_database_url, pg_connection
+
 # ── Supabase client ──────────────────────────────────────────────────────────
 _sb = None
 _sb_url = os.getenv("SUPABASE_URL", "")
@@ -144,18 +146,14 @@ _COLS = [
     'FG_PCT','FG3M','FG3A','FG3_PCT','FTM','FTA','TOV',
 ]
 
-def _load_from_supabase() -> pd.DataFrame:
-    """Page through nba_player_game_logs and return a DataFrame with uppercase columns."""
-    rows, page, size = [], 0, 1000
-    while True:
-        resp = _sb.table('nba_player_game_logs').select('*').range(page * size, (page + 1) * size - 1).execute()
-        batch = resp.data
-        if not batch:
-            break
-        rows.extend(batch)
-        if len(batch) < size:
-            break
-        page += 1
+def _load_from_supabase(conn=None) -> pd.DataFrame:
+    """Load nba_player_game_logs via direct Postgres (or REST fallback) with uppercase columns."""
+    rows = fetch_table_rows(
+        'nba_player_game_logs',
+        columns=[c.lower() for c in _COLS],
+        sb_client=_sb,
+        conn=conn,
+    )
     if not rows:
         return pd.DataFrame(columns=_COLS)
     df = pd.DataFrame(rows)
@@ -173,14 +171,21 @@ class TeamPredictionRequest(BaseModel):
 
 
 # Load on startup — fall back to CSV for local dev if Supabase isn't configured
+_startup_conn_ctx = pg_connection()
+_startup_conn = None
 try:
-    _sb_url = os.getenv("SUPABASE_URL", "")
-    if _sb_url:
+    _startup_conn = _startup_conn_ctx.__enter__()
+except Exception as _conn_err:
+    print(f"Postgres startup connect failed ({_conn_err}), falling back to REST/CSV.")
+    _startup_conn = None
+
+try:
+    if _startup_conn is not None or _sb_url:
         print("Loading game logs from Supabase...")
-        nba_data_df = _load_from_supabase()
+        nba_data_df = _load_from_supabase(conn=_startup_conn)
         print(f"Loaded {len(nba_data_df)} rows from Supabase.")
     else:
-        raise ValueError("SUPABASE_URL not set")
+        raise ValueError("Neither DATABASE_URL nor SUPABASE_URL is set")
 except Exception as _e:
     print(f"Supabase load failed ({_e}), falling back to CSV.")
     nba_data_df = pd.read_csv('nba_player_game_logs.csv')
@@ -190,48 +195,53 @@ HAS_TOV = 'TOV' in nba_data_df.columns
 
 _nba_profiles_dict = {}
 
-def _load_profiles_from_supabase():
+def _load_profiles_from_supabase(conn=None):
     global _nba_profiles_dict
     try:
-        if _sb_url and _sb:
+        if conn is not None or get_database_url() or (_sb_url and _sb):
             print("Loading player profiles from Supabase...")
-            resp = _sb.table('nba_player_profiles').select('*').execute()
-            _nba_profiles_dict = {int(x['player_id']): x for x in resp.data}
+            rows = fetch_table_rows('nba_player_profiles', sb_client=_sb, conn=conn)
+            _nba_profiles_dict = {int(x['player_id']): x for x in rows}
             print(f"Loaded {len(_nba_profiles_dict)} player profiles.")
     except Exception as e:
         print(f"Failed to load player profiles from Supabase: {e}")
 
-_load_profiles_from_supabase()
+_load_profiles_from_supabase(conn=_startup_conn)
 
 
 _nba_rosters_dict = {}
 
-def _load_rosters_from_supabase():
+def _format_nba_roster_row(row: dict) -> dict:
+    return {
+        "id": int(row['player_id']),
+        "name": str(row['player_name']),
+        "number": str(row.get('jersey', '') or '').strip(),
+        "position": str(row.get('position', '') or '').strip(),
+        "height": str(row.get('height', '') or '').strip(),
+        "weight": str(row.get('weight', '') or '').strip(),
+    }
+
+def _load_rosters_from_supabase(conn=None):
     global _nba_rosters_dict
     try:
-        if _sb_url and _sb:
+        if conn is not None or get_database_url() or (_sb_url and _sb):
             print("Loading team rosters from Supabase...")
-            resp = _sb.table('nba_team_rosters').select('*').execute()
-            
+            rows = fetch_table_rows('nba_team_rosters', sb_client=_sb, conn=conn)
+
             temp_rosters = {}
-            for row in resp.data:
+            for row in rows:
                 abbr = str(row['team_abbr']).upper()
-                if abbr not in temp_rosters:
-                    temp_rosters[abbr] = []
-                temp_rosters[abbr].append({
-                    "id": int(row['player_id']),
-                    "name": str(row['player_name']),
-                    "number": str(row.get('jersey', '') or '').strip(),
-                    "position": str(row.get('position', '') or '').strip(),
-                    "height": str(row.get('height', '') or '').strip(),
-                    "weight": str(row.get('weight', '') or '').strip(),
-                })
+                temp_rosters.setdefault(abbr, []).append(_format_nba_roster_row(row))
             _nba_rosters_dict = temp_rosters
             print(f"Loaded {len(_nba_rosters_dict)} team rosters from Supabase.")
     except Exception as e:
         print(f"Failed to load team rosters from Supabase: {e}")
 
-_load_rosters_from_supabase()
+_load_rosters_from_supabase(conn=_startup_conn)
+
+if _startup_conn is not None:
+    _startup_conn_ctx.__exit__(None, None, None)
+_startup_conn = None
 
 # Dynamic cache for rosters (team_abbr -> (timestamp, roster_list))
 _nba_rosters_cache = {}
@@ -249,18 +259,13 @@ def _get_nba_roster_with_cache(abbr: str) -> list:
             
     # 2. Query Supabase for this specific team roster on cache miss/expiration
     try:
-        if _sb_url and _sb:
-            resp = _sb.table('nba_team_rosters').select('*').eq('team_abbr', abbr).execute()
-            roster = []
-            for row in resp.data:
-                roster.append({
-                    "id": int(row['player_id']),
-                    "name": str(row['player_name']),
-                    "number": str(row.get('jersey', '') or '').strip(),
-                    "position": str(row.get('position', '') or '').strip(),
-                    "height": str(row.get('height', '') or '').strip(),
-                    "weight": str(row.get('weight', '') or '').strip(),
-                })
+        if get_database_url() or (_sb_url and _sb):
+            rows = fetch_table_rows(
+                'nba_team_rosters',
+                where_eq=('team_abbr', abbr),
+                sb_client=_sb,
+            )
+            roster = [_format_nba_roster_row(row) for row in rows]
             _nba_rosters_cache[abbr] = (now, roster)
             # Synchronize with the global dict fallback
             _nba_rosters_dict[abbr] = roster
@@ -668,12 +673,51 @@ TEAM_CONFERENCES = {
 }
 
 
+_standings_cache: dict = {"ts": 0.0, "records": {}}
+_ESPN_TO_NBA_ABBR = {
+    "GS": "GSW", "NO": "NOP", "NY": "NYK", "SA": "SAS", "UTAH": "UTA", "WSH": "WAS",
+}
+
+
 def _compute_team_records() -> dict[str, tuple[int, int]]:
-    """Compute (wins, losses) per team abbreviation from loaded game logs."""
+    """Return official (wins, losses) per team from ESPN standings, with current-season DB fallback."""
+    now = time.time()
+    if now - _standings_cache["ts"] < 900 and _standings_cache["records"]:
+        return _standings_cache["records"]
+
     records: dict[str, tuple[int, int]] = {}
+    try:
+        import urllib.request as _req
+        with _req.urlopen(
+            "https://site.api.espn.com/apis/v2/sports/basketball/nba/standings",
+            timeout=5,
+        ) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+        for conf_node in data.get("children") or []:
+            entries = (conf_node.get("standings") or {}).get("entries") or []
+            for entry in entries:
+                raw_abbr = ((entry.get("team") or {}).get("abbreviation") or "").upper()
+                abbr = _ESPN_TO_NBA_ABBR.get(raw_abbr, raw_abbr)
+                if abbr not in TEAM_IDS:
+                    continue
+                stats_map = {s.get("name"): s.get("value") for s in (entry.get("stats") or [])}
+                if "wins" in stats_map and "losses" in stats_map:
+                    records[abbr] = (int(stats_map["wins"]), int(stats_map["losses"]))
+        if len(records) >= 20:
+            _standings_cache.update(ts=now, records=records)
+            return records
+    except Exception as e:
+        print(f"[records] ESPN standings fetch failed: {e}")
+
     if nba_data_df.empty:
         return records
-    team_games = nba_data_df.drop_duplicates(subset=["GAME_ID", "TEAM_ABBREVIATION"])
+    today = _date.today()
+    start_year = today.year if today.month >= 10 else today.year - 1
+    season_start = f"{start_year}-10-01"
+    df = nba_data_df[nba_data_df["GAME_DATE"].astype(str) >= season_start]
+    if df.empty:
+        df = nba_data_df
+    team_games = df.drop_duplicates(subset=["GAME_ID", "TEAM_ABBREVIATION"])
     for abbr, grp in team_games.groupby("TEAM_ABBREVIATION"):
         wl = grp["WL"].astype(str).str.upper()
         w = int((wl == "W").sum())
@@ -719,10 +763,11 @@ def manual_refresh():
 @app.get("/reload")
 def reload_data():
     global nba_data_df, HAS_TOV, _nba_rosters_cache
-    nba_data_df = _load_from_supabase()
-    HAS_TOV = 'TOV' in nba_data_df.columns
-    _load_profiles_from_supabase()
-    _load_rosters_from_supabase()
+    with pg_connection() as conn:
+        nba_data_df = _load_from_supabase(conn=conn)
+        HAS_TOV = 'TOV' in nba_data_df.columns
+        _load_profiles_from_supabase(conn=conn)
+        _load_rosters_from_supabase(conn=conn)
     _nba_rosters_cache.clear()
     return {"status": "done", "rows": len(nba_data_df), "profiles": len(_nba_profiles_dict), "rosters": len(_nba_rosters_dict)}
 

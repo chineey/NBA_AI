@@ -5,6 +5,7 @@ httpx==0.28.1
 nba_api
 numpy
 pandas
+psycopg[binary]
 python-dotenv
 pytz
 requests

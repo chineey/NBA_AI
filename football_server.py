@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import football_prediction_model
+from db_loader import fetch_table_rows, get_database_url, pg_connection
 from gemini_context import grounded_research
 
 load_dotenv()
@@ -68,16 +69,8 @@ def _get_sb_client():
         return None
 
 
-def _page_table(sb, table: str, page_size: int = 1000) -> list[dict]:
-    rows, start = [], 0
-    while True:
-        resp = sb.table(table).select("*").range(start, start + page_size - 1).execute()
-        batch = resp.data or []
-        rows.extend(batch)
-        if len(batch) < page_size:
-            break
-        start += page_size
-    return rows
+def _page_table(sb, table: str, page_size: int = 1000, conn=None) -> list[dict]:
+    return fetch_table_rows(table, sb_client=sb, page_size=page_size, conn=conn)
 
 
 def _load_football_data() -> dict:
@@ -89,83 +82,85 @@ def _load_football_data() -> dict:
            _fb_player_stats_by_player, _fb_player_stats_by_team
 
     sb = _get_sb_client()
-    if sb is None:
-        print("[football] No Supabase credentials -- football endpoints will return empty data.")
+    has_pg = bool(get_database_url())
+    if sb is None and not has_pg:
+        print("[football] No database credentials -- football endpoints will return empty data.")
         return {}
 
     counts = {}
 
-    try:
-        _fb_competitions = {r["code"]: r for r in _page_table(sb, "football_competitions")}
-        counts["competitions"] = len(_fb_competitions)
-    except Exception as e:
-        print(f"[football] Failed to load competitions: {e}")
+    with pg_connection() as conn:
+        try:
+            _fb_competitions = {r["code"]: r for r in _page_table(sb, "football_competitions", conn=conn)}
+            counts["competitions"] = len(_fb_competitions)
+        except Exception as e:
+            print(f"[football] Failed to load competitions: {e}")
 
-    try:
-        _fb_teams = {r["id"]: r for r in _page_table(sb, "football_teams")}
-        counts["teams"] = len(_fb_teams)
-    except Exception as e:
-        print(f"[football] Failed to load teams: {e}")
+        try:
+            _fb_teams = {r["id"]: r for r in _page_table(sb, "football_teams", conn=conn)}
+            counts["teams"] = len(_fb_teams)
+        except Exception as e:
+            print(f"[football] Failed to load teams: {e}")
 
-    try:
-        _fb_team_competitions = _page_table(sb, "football_team_competitions")
-        counts["team_competitions"] = len(_fb_team_competitions)
-    except Exception as e:
-        print(f"[football] Failed to load team-competition links: {e}")
+        try:
+            _fb_team_competitions = _page_table(sb, "football_team_competitions", conn=conn)
+            counts["team_competitions"] = len(_fb_team_competitions)
+        except Exception as e:
+            print(f"[football] Failed to load team-competition links: {e}")
 
-    try:
-        _fb_matches = _page_table(sb, "football_matches")
-        by_team: dict[int, list[dict]] = {}
-        for m in _fb_matches:
-            for tid in (m.get("home_team_id"), m.get("away_team_id")):
-                if tid is not None:
-                    by_team.setdefault(tid, []).append(m)
-        _fb_matches_by_team = by_team
-        counts["matches"] = len(_fb_matches)
-    except Exception as e:
-        print(f"[football] Failed to load matches: {e}")
+        try:
+            _fb_matches = _page_table(sb, "football_matches", conn=conn)
+            by_team: dict[int, list[dict]] = {}
+            for m in _fb_matches:
+                for tid in (m.get("home_team_id"), m.get("away_team_id")):
+                    if tid is not None:
+                        by_team.setdefault(tid, []).append(m)
+            _fb_matches_by_team = by_team
+            counts["matches"] = len(_fb_matches)
+        except Exception as e:
+            print(f"[football] Failed to load matches: {e}")
 
-    try:
-        rows = _page_table(sb, "football_standings")
-        standings: dict[tuple[str, int], dict] = {}
-        for r in rows:
-            key = (r["competition_code"], r["team_id"])
-            if r.get("stage") == "REGULAR_SEASON" or key not in standings:
-                standings[key] = r
-        _fb_standings = standings
-        counts["standings"] = len(rows)
-    except Exception as e:
-        print(f"[football] Failed to load standings: {e}")
+        try:
+            rows = _page_table(sb, "football_standings", conn=conn)
+            standings: dict[tuple[str, int], dict] = {}
+            for r in rows:
+                key = (r["competition_code"], r["team_id"])
+                if r.get("stage") == "REGULAR_SEASON" or key not in standings:
+                    standings[key] = r
+            _fb_standings = standings
+            counts["standings"] = len(rows)
+        except Exception as e:
+            print(f"[football] Failed to load standings: {e}")
 
-    try:
-        _fb_players = {r["id"]: r for r in _page_table(sb, "football_players")}
-        counts["players"] = len(_fb_players)
-    except Exception as e:
-        print(f"[football] Failed to load players: {e}")
+        try:
+            _fb_players = {r["id"]: r for r in _page_table(sb, "football_players", conn=conn)}
+            counts["players"] = len(_fb_players)
+        except Exception as e:
+            print(f"[football] Failed to load players: {e}")
 
-    try:
-        rows = _page_table(sb, "football_player_team")
-        by_team = {}
-        for r in rows:
-            by_team.setdefault(r["team_id"], []).append(r)
-        _fb_player_team = by_team
-        counts["player_team"] = len(rows)
-    except Exception as e:
-        print(f"[football] Failed to load squad memberships: {e}")
-
-    try:
-        _fb_player_season_stats = _page_table(sb, "football_player_season_stats")
-        _fb_player_stats_by_player = {
-            (r["competition_code"], r["player_id"]): r for r in _fb_player_season_stats
-        }
-        by_team = {}
-        for r in _fb_player_season_stats:
-            if r.get("team_id") is not None:
+        try:
+            rows = _page_table(sb, "football_player_team", conn=conn)
+            by_team = {}
+            for r in rows:
                 by_team.setdefault(r["team_id"], []).append(r)
-        _fb_player_stats_by_team = by_team
-        counts["player_season_stats"] = len(_fb_player_season_stats)
-    except Exception as e:
-        print(f"[football] Failed to load player season stats: {e}")
+            _fb_player_team = by_team
+            counts["player_team"] = len(rows)
+        except Exception as e:
+            print(f"[football] Failed to load squad memberships: {e}")
+
+        try:
+            _fb_player_season_stats = _page_table(sb, "football_player_season_stats", conn=conn)
+            _fb_player_stats_by_player = {
+                (r["competition_code"], r["player_id"]): r for r in _fb_player_season_stats
+            }
+            by_team = {}
+            for r in _fb_player_season_stats:
+                if r.get("team_id") is not None:
+                    by_team.setdefault(r["team_id"], []).append(r)
+            _fb_player_stats_by_team = by_team
+            counts["player_season_stats"] = len(_fb_player_season_stats)
+        except Exception as e:
+            print(f"[football] Failed to load player season stats: {e}")
 
     print(f"[football] Loaded: {counts}")
     return counts
