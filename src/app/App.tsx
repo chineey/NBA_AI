@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { AuthPage } from './components/AuthPage';
@@ -48,7 +50,13 @@ export default function App() {
   const [rosterAbbr, setRosterAbbr] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(true);
   const [ticker, setTicker] = useState<Array<{ sport: string; a: string; b: string; s: string; m: string; live?: boolean }>>([]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowDisclaimer(false), 6000);
+    return () => clearTimeout(timer);
+  }, []);
   const navDepthRef = useRef(0);
 
   const pushAppNav = (next: {
@@ -306,6 +314,26 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      {showDisclaimer &&
+        createPortal(
+          <div className="fixed top-3 left-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2">
+            <div className="panel rise flex items-center gap-2.5 border-accent/40 bg-card/95 px-3.5 py-2.5 text-xs text-muted-foreground shadow-lg backdrop-blur">
+              <AlertTriangle className="size-4 shrink-0 text-accent" />
+              <span className="flex-1 leading-snug">
+                Betting is risky — these predictions are model estimates and may not reflect exact match outcomes.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDisclaimer(false)}
+                aria-label="Dismiss disclaimer"
+                className="shrink-0 rounded px-1 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2.5 sm:py-3">
           <Logo />

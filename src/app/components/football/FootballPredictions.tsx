@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProbBar, TextAvatar } from '../DesignPrimitives';
 import { MatchAnalysisModal } from './MatchAnalysisModal';
@@ -70,14 +69,8 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
   const [matches, setMatches] = useState<PredictionMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
-  const [showDisclaimer, setShowDisclaimer] = useState(true);
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShowDisclaimer(false), 6000);
-    return () => clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -109,26 +102,6 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
 
   return (
     <div className="space-y-4">
-      {showDisclaimer &&
-        createPortal(
-          <div className="fixed top-3 left-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2">
-            <div className="panel rise flex items-center gap-2.5 border-accent/40 bg-card/95 px-3.5 py-2.5 text-xs text-muted-foreground shadow-lg backdrop-blur">
-              <AlertTriangle className="size-4 shrink-0 text-accent" />
-              <span className="flex-1 leading-snug">
-                Betting is risky — these predictions are model estimates and may not reflect exact match outcomes.
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowDisclaimer(false)}
-                aria-label="Dismiss disclaimer"
-                className="shrink-0 rounded px-1 text-muted-foreground hover:text-foreground"
-              >
-                ✕
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="no-scrollbar flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
           {COMPETITION_PILLS.map((c) => (
