@@ -492,8 +492,6 @@ def generate_match_prediction(m: dict) -> dict:
 
     matrix = football_prediction_model.score_matrix(lam_h, lam_a)
     markets = football_prediction_model._markets(matrix)
-    top_scores = football_prediction_model._top_scores(matrix)
-    top_score = f"{top_scores[0]['a']} - {top_scores[0]['b']}"
 
     h_pct, d_pct, a_pct = _normalize_probabilities(markets["aWin"], markets["draw"], markets["bWin"])
 
@@ -513,6 +511,10 @@ def generate_match_prediction(m: dict) -> dict:
         favored_label = "Draw"
         confidence = "medium"
         reasoning_summary = f"Closely matched encounter with an elevated {d_pct}% draw probability; both teams exhibit balanced xG profiles."
+
+    best = football_prediction_model.best_score_for_outcome(matrix, favored_code)
+    top_score = f"{best['a']} - {best['b']}"
+    picks = football_prediction_model.tiered_picks(markets)
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -542,6 +544,7 @@ def generate_match_prediction(m: dict) -> dict:
                 "away": round(lam_a, 2)
             },
             "summaryReasoning": reasoning_summary,
+            "picks": picks,
             "hasModelData": True,
             "disclaimer": "Model estimates from time-decayed Poisson · Not guaranteed"
         },

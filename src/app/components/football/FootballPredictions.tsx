@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProbBar, TextAvatar } from '../DesignPrimitives';
 import { MatchAnalysisModal } from './MatchAnalysisModal';
@@ -23,6 +24,7 @@ export interface PredictionMatch {
     confidence: 'high' | 'medium' | 'low';
     expectedGoals: { home: number; away: number };
     summaryReasoning: string;
+    picks?: { label: string; pct: number; risk: 'low' | 'high' }[];
     hasModelData: boolean;
     disclaimer?: string;
   };
@@ -68,8 +70,14 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
   const [matches, setMatches] = useState<PredictionMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(true);
 
   const BASE = import.meta.env.VITE_FOOTBALL_API_URL || import.meta.env.VITE_API_URL;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowDisclaimer(false), 6000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -101,6 +109,26 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
 
   return (
     <div className="space-y-4">
+      {showDisclaimer &&
+        createPortal(
+          <div className="fixed top-3 left-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2">
+            <div className="panel rise flex items-center gap-2.5 border-accent/40 bg-card/95 px-3.5 py-2.5 text-xs text-muted-foreground shadow-lg backdrop-blur">
+              <AlertTriangle className="size-4 shrink-0 text-accent" />
+              <span className="flex-1 leading-snug">
+                Betting is risky — these predictions are model estimates and may not reflect exact match outcomes.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDisclaimer(false)}
+                aria-label="Dismiss disclaimer"
+                className="shrink-0 rounded px-1 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="no-scrollbar flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
           {COMPETITION_PILLS.map((c) => (
@@ -108,11 +136,10 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
               key={c.code}
               type="button"
               onClick={() => setSelectedComp(c.code)}
-              className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                selectedComp === c.code
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:border-primary hover:text-foreground'
-              }`}
+              className={`shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${selectedComp === c.code
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:border-primary hover:text-foreground'
+                }`}
             >
               {c.label}
             </button>
@@ -146,8 +173,8 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
               m.prediction.confidence === 'high'
                 ? 'bg-primary/15 text-primary'
                 : m.prediction.confidence === 'medium'
-                ? 'bg-accent/15 text-accent'
-                : 'bg-secondary text-muted-foreground';
+                  ? 'bg-accent/15 text-accent'
+                  : 'bg-secondary text-muted-foreground';
             return (
               <button
                 key={m.matchId}
@@ -202,6 +229,22 @@ export function FootballPredictions({ onSelectTeam, onSelectCompetition }: Props
                     d={m.prediction.drawPct}
                     a={m.prediction.awayWinPct}
                   />
+                  {m.prediction.picks && m.prediction.picks.length > 0 && (
+                    <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                      {m.prediction.picks.map((pk, idx) => (
+                        <div
+                          key={`${pk.label}-${idx}`}
+                          className={`flex items-center justify-between rounded-md border px-2 py-1 text-[11px] font-medium ${pk.risk === 'high'
+                            ? 'border-accent/40 bg-accent/10 text-accent'
+                            : 'border-primary/30 bg-primary/10 text-primary'
+                            }`}
+                        >
+                          <span className="truncate font-semibold">{pk.label}</span>
+                          <span className="num ml-1 shrink-0">{pk.pct}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pt-0.5 text-[11px] text-muted-foreground">
                     <span className={`rounded-full px-2 py-0.5 font-medium capitalize ${confColor}`}>
                       {m.prediction.confidence} confidence

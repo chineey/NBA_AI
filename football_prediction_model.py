@@ -241,10 +241,81 @@ def _top_scores(matrix: list[list[float]], n: int = 6) -> list[dict]:
     return flat[:n]
 
 
+def best_score_for_outcome(matrix: list[list[float]], outcome: str) -> dict:
+    """Return the highest-probability scoreline consistent with the favored outcome ('1', 'X', or '2')."""
+    all_scores = _top_scores(matrix, n=(MAX_GOALS + 1) ** 2)
+    for s in all_scores:
+        if outcome == "1" and s["a"] > s["b"]:
+            return s
+        if outcome == "2" and s["b"] > s["a"]:
+            return s
+        if outcome == "X" and s["a"] == s["b"]:
+            return s
+    return all_scores[0]
+
+
 def _bucket_best(candidates: list[tuple[str, float]]) -> dict:
     """Highest-probability option within one market group (see `_picks`)."""
     label, p = max(candidates, key=lambda c: c[1])
     return {"label": label, "probability": round(p, 4)}
+
+
+def tiered_picks(markets: dict) -> list[dict]:
+    """Return 3 picks: 2 low-risk (highest-probability from distinct market groups)
+    and 1 high-risk (highest-probability bolder pick < 65% from 1X/12/X2, GG/NG, Over/Under)."""
+    dc = [
+        {"label": "1X", "group": "dc", "probability": markets["aWin"] + markets["draw"]},
+        {"label": "12", "group": "dc", "probability": markets["aWin"] + markets["bWin"]},
+        {"label": "X2", "group": "dc", "probability": markets["bWin"] + markets["draw"]},
+    ]
+    btts = [
+        {"label": "GG", "group": "btts", "probability": markets["btts"]["yes"]},
+        {"label": "NG", "group": "btts", "probability": markets["btts"]["no"]},
+    ]
+    ou = [
+        {
+            "label": f"{'O' if side == 'over' else 'U'}{line}",
+            "group": "ou",
+            "probability": markets["overUnder"][line][side],
+        }
+        for line in ("1.5", "2.5", "3.5")
+        for side in ("over", "under")
+    ]
+
+    best_per_group = [
+        max(dc, key=lambda c: c["probability"]),
+        max(btts, key=lambda c: c["probability"]),
+        max(ou, key=lambda c: c["probability"]),
+    ]
+    best_per_group.sort(key=lambda c: c["probability"], reverse=True)
+    low_risk = best_per_group[:2]
+    used_groups = {p["group"] for p in low_risk}
+
+    # High risk: highest-probability bolder pick (< 65%) across 1X/12/X2, GG/NG, Over/Under
+    # without picking an underdog opposite (e.g. never pick NG at 26% when GG is 74%).
+    low_labels = {p["label"] for p in low_risk}
+    btts_best = max(btts, key=lambda c: c["probability"])
+    dc_best = max(dc, key=lambda c: c["probability"])
+    favored_pool = [dc_best, btts_best] + [
+        c for c in ou
+        if c["label"] not in low_labels
+        # Avoid contradicting an O1.5/U3.5 low-risk pick with an opposite-direction line
+        and not (any(l.startswith("O") for l in low_labels if l in ("O1.5", "O2.5", "O3.5")) and c["label"].startswith("U"))
+        and not (any(l.startswith("U") for l in low_labels if l in ("U1.5", "U2.5", "U3.5")) and c["label"].startswith("O"))
+    ]
+    high_candidates = [c for c in favored_pool if c["label"] not in low_labels and 0.40 <= c["probability"] < 0.65]
+    if not high_candidates:
+        high_candidates = [c for c in favored_pool if c["label"] not in low_labels and c["probability"] < 0.65]
+    if not high_candidates:
+        high_candidates = [c for c in favored_pool if c["label"] not in low_labels]
+    high_risk = max(high_candidates, key=lambda c: c["probability"])
+
+    return [
+        {"label": p["label"], "pct": round(p["probability"] * 100), "risk": "low"}
+        for p in low_risk
+    ] + [
+        {"label": high_risk["label"], "pct": round(high_risk["probability"] * 100), "risk": "high"}
+    ]
 
 
 def _picks(markets: dict, home_label: str, away_label: str) -> list[dict]:
@@ -316,6 +387,13 @@ def predict_fixture(match: dict, home_team: dict, away_team: dict, matches: list
     matrix = score_matrix(lam_h, lam_a)
     markets = _markets(matrix)
     top = _top_scores(matrix)
+    if markets["aWin"] >= markets["draw"] and markets["aWin"] >= markets["bWin"]:
+        favored = "1"
+    elif markets["bWin"] > markets["aWin"] and markets["bWin"] >= markets["draw"]:
+        favored = "2"
+    else:
+        favored = "X"
+    best_score = best_score_for_outcome(matrix, favored)
 
     home_label = home_team.get("shortName") or home_team.get("name", "Home")
     away_label = away_team.get("shortName") or away_team.get("name", "Away")
@@ -332,7 +410,7 @@ def predict_fixture(match: dict, home_team: dict, away_team: dict, matches: list
                 "homeWin": markets["aWin"], "draw": markets["draw"], "awayWin": markets["bWin"],
                 "overUnder": markets["overUnder"], "btts": markets["btts"],
             },
-            "predictedScore": {"home": top[0]["a"], "away": top[0]["b"]},
+            "predictedScore": {"home": best_score["a"], "away": best_score["b"]},
             "correctScores": [{"score": s["score"], "home": s["a"], "away": s["b"], "probability": s["probability"]} for s in top],
             "picks": _picks(markets, home_label, away_label),
         },
