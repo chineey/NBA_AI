@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { PredictionStatCard, StatBox } from './DesignPrimitives';
+import { formatLocalGameDateTime } from '../../lib/dateTime';
 
 type TeamGame = {
   gameDate: string;
@@ -21,7 +22,7 @@ type Team = {
   recentGames: TeamGame[];
   seasonAvg: { pts: number; reb: number; ast: number; fg3m: number };
   totalGames: number;
-  nextGame?: { gameDate: string; matchup: string; opponent: string; homeAway: string } | null;
+  nextGame?: { gameDate: string; gameTimeUTC?: string; matchup: string; opponent: string; homeAway: string } | null;
 };
 
 type TeamPred = {
@@ -137,7 +138,10 @@ export function TeamPrediction({ team, embedded = false }: { team: Team; embedde
             <div className="rounded-lg bg-secondary px-4 py-2 text-sm">
               <div className="text-xs uppercase tracking-wider text-muted-foreground">Next game</div>
               <div className="font-semibold">
-                {team.nextGame.matchup} · <span className="num text-primary">{team.nextGame.gameDate}</span>
+                {team.nextGame.matchup} ·{' '}
+                <span className="num text-primary">
+                  {formatLocalGameDateTime(team.nextGame.gameDate, team.nextGame.gameTimeUTC)}
+                </span>
               </div>
             </div>
           )}

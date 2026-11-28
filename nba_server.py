@@ -598,9 +598,16 @@ def get_next_game(team_abbr: str) -> dict | None:
             }
 
     # ── 2. Check Supabase-cached season schedule (instant in-memory lookup) ──
+    from datetime import datetime as _dt, timezone as _tz
+    now_utc = _dt.now(_tz.utc).isoformat()
     for row in _nba_schedule_list:
         gd = str(row.get('game_date') or '')[:10]
-        if gd < today_str:
+        raw_utc = row.get('game_time_utc') or row.get('gameDateTimeUTC') or row.get('gameTimeUTC') or row.get('gameDateTime')
+        game_time_utc = '' if raw_utc is None or pd.isna(raw_utc) else str(raw_utc).strip()
+        if game_time_utc:
+            if game_time_utc < now_utc and gd < today_str:
+                continue
+        elif gd < today_str:
             continue
         ht = str(row.get('home_team') or '').upper()
         at = str(row.get('away_team') or '').upper()
@@ -612,7 +619,7 @@ def get_next_game(team_abbr: str) -> dict | None:
                 "opponent": opponent,
                 "homeAway": "HOME" if is_home else "AWAY",
                 "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",
-                "gameTimeUTC": str(row.get('game_time_utc') or ''),
+                "gameTimeUTC": game_time_utc,
             }
 
     # ── 3. Fall back to live NBA API season schedules if DB table is empty ───
@@ -662,9 +669,17 @@ def _next_game_from_schedule(team_abbr: str, season: str) -> dict | None:
         is_home = row[home_col] == team_abbr
         opponent = str(row[away_col] if is_home else row[home_col]).strip() or "TBD"
         game_date = row['_date'].strftime('%Y-%m-%d')
+        game_time_utc = ''
+        for candidate in ('gameDateTimeUTC', 'gameTimeUTC', 'gameDateTime'):
+            if candidate in future.columns:
+                raw_time = row.get(candidate)
+                if pd.notna(raw_time):
+                    game_time_utc = str(raw_time).strip()
+                    break
 
         return {
             "gameDate": game_date,
+            "gameTimeUTC": game_time_utc,
             "opponent": opponent,
             "homeAway": "HOME" if is_home else "AWAY",
             "matchup": f"{team_abbr} vs. {opponent}" if is_home else f"{team_abbr} @ {opponent}",

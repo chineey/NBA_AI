@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { PlayerPhoto } from './PlayerPhoto';
 import { BackButton } from './BackButton';
 import { TeamPrediction } from './TeamPrediction';
+import { formatLocalGameDateTime } from '../../lib/dateTime';
 
 export type RosterPlayer = {
   id: number;
@@ -24,7 +25,7 @@ type RosterData = {
   conf?: string;
   w?: number;
   l?: number;
-  nextGame?: { gameDate: string; matchup: string; opponent: string; homeAway: string } | null;
+  nextGame?: { gameDate: string; gameTimeUTC?: string; matchup: string; opponent: string; homeAway: string } | null;
   players: RosterPlayer[];
 };
 
@@ -111,7 +112,7 @@ export function TeamRoster({ abbr, onSelectPlayer, onBack }: Props) {
               {roster.abbr}
               {roster.conf ? ` · ${roster.conf}` : ''}
               {hasRecord ? ` · ${roster.w}–${roster.l}` : ''}
-              {roster.nextGame ? ` · Next: ${roster.nextGame.matchup} (${roster.nextGame.gameDate})` : ''}
+              {roster.nextGame ? ` · Next: ${roster.nextGame.matchup} (${formatLocalGameDateTime(roster.nextGame.gameDate, roster.nextGame.gameTimeUTC)})` : ''}
             </p>
           </div>
         </div>

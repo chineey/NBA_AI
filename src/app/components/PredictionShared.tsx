@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Badge } from '@/app/components/ui/badge';
 import { Button } from '@/app/components/ui/button';
 import { cn } from '@/app/components/ui/utils';
+import { formatLocalGameDateTime, parseLocalDateTime } from '../../lib/dateTime';
 
 export type Accent = 'orange' | 'green';
 
@@ -37,23 +38,22 @@ const ACCENT = {
 
 export type NextGame = {
   gameDate: string;
+  gameTimeUTC?: string;
   opponent: string;
   homeAway: string;
   matchup: string;
 };
 
-const formatGameDate = (iso: string) => {
-  const d = new Date(`${iso}T00:00:00`);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-};
+const formatGameDate = (game: NextGame) => formatLocalGameDateTime(game.gameDate, game.gameTimeUTC);
 
-const daysUntil = (iso: string): string | null => {
-  const d = new Date(`${iso}T00:00:00`);
-  if (isNaN(d.getTime())) return null;
+const daysUntil = (game: NextGame): string | null => {
+  const d = parseLocalDateTime(game.gameTimeUTC || game.gameDate);
+  if (!d) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+  const gameDay = new Date(d);
+  gameDay.setHours(0, 0, 0, 0);
+  const diff = Math.round((gameDay.getTime() - today.getTime()) / 86_400_000);
   if (diff < 0) return null;
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Tomorrow';
@@ -77,7 +77,7 @@ export function NextGameBadge({ nextGame, accent = 'orange' }: { nextGame?: Next
   }
 
   const isHome = nextGame.homeAway === 'HOME';
-  const countdown = daysUntil(nextGame.gameDate);
+  const countdown = daysUntil(nextGame);
 
   return (
     <Card className={cn('gap-1 overflow-hidden border bg-gradient-to-br px-4 py-3 text-right', a.badgeGradient, a.badgeBorder)}>
@@ -88,7 +88,7 @@ export function NextGameBadge({ nextGame, accent = 'orange' }: { nextGame?: Next
       <div className="font-bold tracking-tight text-white">{nextGame.matchup}</div>
       <div className="flex items-center justify-end gap-1.5 text-xs text-gray-400">
         {isHome ? <Home className="size-3" /> : <Plane className="size-3" />}
-        {formatGameDate(nextGame.gameDate)} · {isHome ? 'Home' : 'Away'}
+        {formatGameDate(nextGame)} · {isHome ? 'Home' : 'Away'}
       </div>
     </Card>
   );

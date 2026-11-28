@@ -486,9 +486,12 @@ def generate_match_prediction(m: dict) -> dict:
     atk_a = away_form.get("attack", 1.15)
     def_a = away_form.get("defense", 1.00)
 
-    # Compute Poisson lambdas
-    lam_h = min(max(1.35 * atk_h * def_a * 1.30, 0.3), 4.2)
-    lam_a = min(max(1.35 * atk_a * def_h, 0.2), 3.8)
+    # Compute Poisson lambdas (symmetric home/away split so total expected goals stay calibrated)
+    ha_h = math.sqrt(football_prediction_model.HOME_ADV)
+    ha_a = 1.0 / ha_h
+    base = football_prediction_model.BASELINE_GOALS
+    lam_h = min(max(base * atk_h * def_a * ha_h, 0.25), 4.2)
+    lam_a = min(max(base * atk_a * def_h * ha_a, 0.20), 3.8)
 
     matrix = football_prediction_model.score_matrix(lam_h, lam_a)
     markets = football_prediction_model._markets(matrix)

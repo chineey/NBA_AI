@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bars, PillTabs, PredictionStatCard, StatBox } from './DesignPrimitives';
+import { formatLocalGameDateTime } from '../../lib/dateTime';
 
 type Game = {
   gameDate: string;
@@ -36,7 +37,7 @@ type Player = {
   experience?: string;
   recentGames: Game[];
   seasonAvg?: { pts: number; reb: number; ast: number };
-  nextGame?: { gameDate: string; matchup: string; opponent: string; homeAway: string } | null;
+  nextGame?: { gameDate: string; gameTimeUTC?: string; matchup: string; opponent: string; homeAway: string } | null;
 };
 
 type Prediction = {
@@ -158,7 +159,7 @@ export function StatPrediction({ player }: { player: Player }) {
             <h3 className="text-lg font-semibold">Recent Form vs Season Average</h3>
             {player.nextGame && (
               <p className="text-xs text-muted-foreground">
-                Next: {player.nextGame.matchup} · {player.nextGame.gameDate}
+                Next: {player.nextGame.matchup} · {formatLocalGameDateTime(player.nextGame.gameDate, player.nextGame.gameTimeUTC)}
               </p>
             )}
           </div>

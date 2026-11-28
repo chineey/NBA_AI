@@ -31,19 +31,15 @@ import math
 
 # ── Model constants ───────────────────────────────────────────────────────────
 BASELINE_GOALS = 1.35   # avg goals per team per match in top European club football
-DECAY          = 0.90   # per-match exponential decay on form weighting
-SHRINK_K       = 6.0    # form trust: with only ~1 season of our own ingested match
-                        # history per team (not decades like the old Elo prior),
-                        # a team needs ~6 matches to reach 50% trust vs. the
-                        # neutral 1.0/1.0 baseline -- a documented judgment call,
-                        # not backtest-tuned (no historical club dataset to tune against).
+DECAY          = 0.94   # per-match exponential decay on form weighting (backtest-tuned from 0.90)
+SHRINK_K       = 10.0   # form trust: backtest-tuned from 6.0 (stronger small-sample shrinkage)
 H2H_N          = 3      # head-to-head: last N meetings between the two sides
 H2H_SHRINK     = 30.0   # lightly blended -- club h2h samples within one ingested
                         # season are usually tiny (1-4 meetings), so this stays
                         # a minor nudge, same spirit as the old WC model.
 HOME_ADV       = 1.35   # club-football-typical home advantage (real venues, unlike
                         # the World Cup's neutral-venue tournament format)
-DC_RHO         = -0.10  # Dixon-Coles low-score dependence parameter
+DC_RHO         = -0.13  # Dixon-Coles low-score dependence parameter (backtest-tuned from -0.10)
 MAX_GOALS      = 10     # score matrix dimension (0..10 goals each side)
 LAMBDA_MIN     = 0.20
 LAMBDA_MAX     = 4.50
@@ -360,8 +356,10 @@ def _compute_lambdas(home_id: int, away_id: int, matches: list[dict],
                      before_iso: str | None = None) -> tuple[float, float, dict, dict, dict | None]:
     hs = team_strength(home_id, matches, before_iso)
     as_ = team_strength(away_id, matches, before_iso)
-    lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * HOME_ADV
-    lam_a = BASELINE_GOALS * as_["attack"] * hs["defense"]
+    ha_h = math.sqrt(HOME_ADV)
+    ha_a = 1.0 / ha_h
+    lam_h = BASELINE_GOALS * hs["attack"] * as_["defense"] * ha_h
+    lam_a = BASELINE_GOALS * as_["attack"] * hs["defense"] * ha_a
     h2h = h2h_factors(home_id, away_id, matches, before_iso)
     if h2h:
         lam_h *= h2h["aFactor"]

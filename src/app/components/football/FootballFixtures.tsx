@@ -19,7 +19,11 @@ type Fixture = {
 function formatFixtureDate(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return (
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' · ' +
+    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  );
 }
 
 type Props = {
